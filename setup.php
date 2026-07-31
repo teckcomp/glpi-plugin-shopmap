@@ -1,0 +1,92 @@
+<?php
+
+/**
+ * ShopMap — gestão visual de infraestrutura de TI sobre planta baixa
+ * (shoppings e grandes edifícios), para GLPI 11.
+ *
+ * Referência de produto: OZmap "indoor". Não altera tabelas nativas —
+ * apenas adiciona tabelas próprias (prefixo glpi_plugin_shopmap_) e
+ * reutiliza NetworkPort/Documents do core como fonte de verdade.
+ */
+
+use Glpi\Plugin\Hooks;
+use GlpiPlugin\Shopmap\Dashboard;
+
+define('PLUGIN_SHOPMAP_VERSION', '0.1.0');
+
+// Versões mínima/máxima do GLPI suportadas
+define('PLUGIN_SHOPMAP_MIN_GLPI', '11.0.0');
+define('PLUGIN_SHOPMAP_MAX_GLPI', '11.0.99');
+
+/**
+ * Inicialização do plugin: hooks, menus, CSS/JS.
+ */
+function plugin_init_shopmap(): void
+{
+    global $PLUGIN_HOOKS;
+
+    $PLUGIN_HOOKS[Hooks::CSRF_COMPLIANT]['shopmap'] = true;
+
+    $plugin = new Plugin();
+    if (!$plugin->isActivated('shopmap')) {
+        return;
+    }
+
+    // Item de menu: Ativos > ShopMap (dashboard de plantas)
+    if (Session::haveRight('plugin_shopmap', READ)) {
+        $PLUGIN_HOOKS['menu_toadd']['shopmap'] = [
+            'assets' => Dashboard::class,
+        ];
+    }
+
+    // CSS do plugin (por enquanto só o dashboard; Leaflet entra na Fase 1,
+    // Bloco 2, junto com o canvas)
+    $PLUGIN_HOOKS[Hooks::ADD_CSS]['shopmap'] = 'css/shopmap.css';
+}
+
+/**
+ * Metadados do plugin.
+ */
+function plugin_version_shopmap(): array
+{
+    return [
+        'name'         => 'ShopMap',
+        'version'      => PLUGIN_SHOPMAP_VERSION,
+        'author'       => 'Teckcomp I.T. Services',
+        'license'      => 'GPL-2.0-or-later',
+        'homepage'     => 'https://github.com/teckcomp/glpi-plugin-shopmap',
+        'requirements' => [
+            'glpi' => [
+                'min' => PLUGIN_SHOPMAP_MIN_GLPI,
+                'max' => PLUGIN_SHOPMAP_MAX_GLPI,
+            ],
+            'php'  => [
+                'min' => '8.2',
+            ],
+        ],
+    ];
+}
+
+/**
+ * Pré-requisitos (chamado antes da instalação).
+ */
+function plugin_shopmap_check_prerequisites(): bool
+{
+    if (version_compare(GLPI_VERSION, PLUGIN_SHOPMAP_MIN_GLPI, '<')) {
+        echo sprintf(
+            'Este plugin requer GLPI >= %s (versão atual: %s)',
+            PLUGIN_SHOPMAP_MIN_GLPI,
+            GLPI_VERSION
+        );
+        return false;
+    }
+    return true;
+}
+
+/**
+ * Verificação de configuração (chamado na ativação).
+ */
+function plugin_shopmap_check_config($verbose = false): bool
+{
+    return true;
+}

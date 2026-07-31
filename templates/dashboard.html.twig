@@ -1,0 +1,46 @@
+{# ShopMap — dashboard (Bloco 1: esqueleto). Autocontido: não estende
+   layout do core, para reduzir risco de variação entre versões. Toda
+   variável vem na associativa `sm` (front/index.php). #}
+<div class="container-fluid shopmap-dashboard" id="shopmap-dashboard">
+
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <h2 class="mb-0">
+            <i class="ti ti-map-2 me-2"></i>ShopMap
+            <span class="badge bg-secondary text-white ms-2">v{{ sm.version }}</span>
+        </h2>
+        <button type="button" class="btn btn-primary" disabled
+                title="Disponível no próximo bloco (upload de planta)">
+            <i class="ti ti-upload me-1"></i>Nova planta
+        </button>
+    </div>
+
+    {% if sm.plan_count == 0 %}
+        <div class="card">
+            <div class="card-body text-center py-5">
+                <i class="ti ti-map-off" style="font-size: 3rem; opacity: .3;"></i>
+                <h3 class="mt-3">Nenhuma planta cadastrada</h3>
+                <p class="text-muted mb-0">
+                    O upload de plantas (DWG/PDF → SVG) será habilitado no próximo bloco.<br>
+                    Instalação do ShopMap concluída com sucesso — schema e permissões prontos.
+                </p>
+            </div>
+        </div>
+    {% else %}
+        <div class="row">
+            {% for plan in sm.plans %}
+                <div class="col-12 col-md-6 col-lg-4 mb-3">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h4 class="card-title mb-1">{{ plan.name }}</h4>
+                            <span class="badge bg-secondary text-white">{{ plan.conversion_status }}</span>
+                            <div class="text-muted mt-2">
+                                Atualizada em {{ plan.date_mod }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+</div>
