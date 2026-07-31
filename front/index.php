@@ -2,11 +2,12 @@
 
 /**
  * ShopMap — dashboard (tela única de gestão).
- * Bloco 1: esqueleto navegável; upload de planta entra no Bloco 2.
+ * Bloco 2a: formulário de nova planta + cards com abrir/excluir.
  */
 
 use Glpi\Application\View\TemplateRenderer;
 use GlpiPlugin\Shopmap\Dashboard;
+use GlpiPlugin\Shopmap\Url;
 
 include('../../../inc/includes.php');
 
@@ -28,6 +29,11 @@ TemplateRenderer::getInstance()->display('@shopmap/dashboard.html.twig', [
         'version'    => PLUGIN_SHOPMAP_VERSION,
         'plans'      => $plans,
         'plan_count' => count($plans),
+        'can_create' => Session::haveRight('plugin_shopmap', CREATE),
+        'can_delete' => Session::haveRight('plugin_shopmap', DELETE),
+        'csrf_token' => Session::getNewCSRFToken(),
+        'form_url'   => Url::to('front/floorplan.form.php'),
+        'plan_url'   => Url::to('front/plan.php'),
     ],
 ]);
 

@@ -1,6 +1,5 @@
-{# ShopMap — dashboard (Bloco 1: esqueleto). Autocontido: não estende
-   layout do core, para reduzir risco de variação entre versões. Toda
-   variável vem na associativa `sm` (front/index.php). #}
+{# ShopMap — dashboard (Bloco 2a): formulário de nova planta + cards.
+   Autocontido; toda variável vem na associativa `sm` (front/index.php). #}
 <div class="container-fluid shopmap-dashboard" id="shopmap-dashboard">
 
     <div class="d-flex align-items-center justify-content-between mb-3">
@@ -8,21 +7,51 @@
             <i class="ti ti-map-2 me-2"></i>ShopMap
             <span class="badge bg-secondary text-white ms-2">v{{ sm.version }}</span>
         </h2>
-        <button type="button" class="btn btn-primary" disabled
-                title="Disponível no próximo bloco (upload de planta)">
-            <i class="ti ti-upload me-1"></i>Nova planta
-        </button>
+        {% if sm.can_create %}
+            <button type="button" class="btn btn-primary"
+                    onclick="document.getElementById('shopmap-new-plan').classList.toggle('d-none');">
+                <i class="ti ti-upload me-1"></i>Nova planta
+            </button>
+        {% endif %}
     </div>
+
+    {% if sm.can_create %}
+        <div id="shopmap-new-plan" class="card mb-3 {{ sm.plan_count > 0 ? 'd-none' : '' }}">
+            <div class="card-body">
+                <h4 class="card-title">Cadastrar planta</h4>
+                <form method="post" action="{{ sm.form_url }}" enctype="multipart/form-data" class="row g-2 align-items-end">
+                    <div class="col-12 col-md-4">
+                        <label class="form-label" for="sm-plan-name">Nome (shopping / piso)</label>
+                        <input type="text" class="form-control" id="sm-plan-name" name="name"
+                               maxlength="255" required placeholder="Ex.: Shopping Centro — Piso L1">
+                    </div>
+                    <div class="col-12 col-md-5">
+                        <label class="form-label" for="sm-plan-file">Arquivo da planta (SVG, PNG ou JPG)</label>
+                        <input type="file" class="form-control" id="sm-plan-file" name="planfile"
+                               accept=".svg,.png,.jpg,.jpeg" required>
+                    </div>
+                    <div class="col-12 col-md-3">
+                        <input type="hidden" name="_glpi_csrf_token" value="{{ sm.csrf_token }}">
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="ti ti-device-floppy me-1"></i>Salvar
+                        </button>
+                    </div>
+                    <div class="col-12">
+                        <span class="text-muted small">
+                            SVG é o formato recomendado (zoom sem perda). DWG/DXF/PDF: conversão automática no próximo bloco.
+                        </span>
+                    </div>
+                </form>
+            </div>
+        </div>
+    {% endif %}
 
     {% if sm.plan_count == 0 %}
         <div class="card">
             <div class="card-body text-center py-5">
                 <i class="ti ti-map-off" style="font-size: 3rem; opacity: .3;"></i>
                 <h3 class="mt-3">Nenhuma planta cadastrada</h3>
-                <p class="text-muted mb-0">
-                    O upload de plantas (DWG/PDF → SVG) será habilitado no próximo bloco.<br>
-                    Instalação do ShopMap concluída com sucesso — schema e permissões prontos.
-                </p>
+                <p class="text-muted mb-0">Use "Nova planta" para enviar a primeira planta baixa.</p>
             </div>
         </div>
     {% else %}
@@ -30,11 +59,27 @@
             {% for plan in sm.plans %}
                 <div class="col-12 col-md-6 col-lg-4 mb-3">
                     <div class="card h-100">
-                        <div class="card-body">
+                        <div class="card-body d-flex flex-column">
                             <h4 class="card-title mb-1">{{ plan.name }}</h4>
-                            <span class="badge bg-secondary text-white">{{ plan.conversion_status }}</span>
-                            <div class="text-muted mt-2">
-                                Atualizada em {{ plan.date_mod }}
+                            <div class="mb-2">
+                                <span class="badge bg-secondary text-white">{{ plan.conversion_status }}</span>
+                            </div>
+                            <div class="text-muted small mb-3">Atualizada em {{ plan.date_mod }}</div>
+                            <div class="mt-auto d-flex gap-2">
+                                <a class="btn btn-primary btn-sm" href="{{ sm.plan_url }}?id={{ plan.id }}">
+                                    <i class="ti ti-map-2 me-1"></i>Abrir
+                                </a>
+                                {% if sm.can_delete %}
+                                    <form method="post" action="{{ sm.form_url }}"
+                                          onsubmit="return confirm('Excluir a planta \'{{ plan.name|e('js') }}\'? Shapes e conexões dela também serão removidos.');">
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="id" value="{{ plan.id }}">
+                                        <input type="hidden" name="_glpi_csrf_token" value="{{ sm.csrf_token }}">
+                                        <button type="submit" class="btn btn-outline-danger btn-sm">
+                                            <i class="ti ti-trash"></i>
+                                        </button>
+                                    </form>
+                                {% endif %}
                             </div>
                         </div>
                     </div>

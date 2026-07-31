@@ -1,0 +1,27 @@
+{# ShopMap — canvas da planta (Bloco 2a). Autocontido; toda variável vem
+   na associativa `sm` (front/plan.php). O JS expõe mount() com estado
+   isolado (padrão do ambiente para conteúdo carregado via AJAX). #}
+<link rel="stylesheet" href="{{ sm.leaflet_css }}">
+
+<div class="container-fluid shopmap-plan">
+    <div class="d-flex align-items-center justify-content-between mb-2">
+        <h3 class="mb-0">
+            <a href="{{ sm.back_url }}" class="me-2" title="Voltar ao ShopMap">
+                <i class="ti ti-arrow-left"></i>
+            </a>
+            <i class="ti ti-map-2 me-1"></i>{{ sm.plan_name }}
+        </h3>
+        <div class="text-muted small">
+            Zoom: roda do mouse / pinça &middot; Tela cheia: botão no mapa
+        </div>
+    </div>
+
+    <div id="shopmap-canvas" class="shopmap-canvas card"></div>
+</div>
+
+<script type="application/json" id="shopmap-plan-data">{{ sm.plan_json|raw }}</script>
+<script src="{{ sm.leaflet_js }}"></script>
+<script src="{{ sm.plan_js }}"></script>
+<script>
+    window.ShopMapPlan && window.ShopMapPlan.mount('shopmap-canvas', 'shopmap-plan-data');
+</script>

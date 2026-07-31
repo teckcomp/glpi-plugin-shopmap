@@ -1,3 +1,26 @@
-/* ShopMap — estilos do plugin (Bloco 1: minimo do dashboard) */
+/* ShopMap — estilos do plugin (Bloco 2a) */
 .shopmap-dashboard { padding-top: .5rem; }
 .shopmap-dashboard .card-title { font-weight: 600; }
+
+/* Canvas da planta */
+.shopmap-plan { padding-top: .5rem; }
+.shopmap-canvas {
+    height: calc(100vh - 220px);
+    min-height: 420px;
+    background: #f4f4f4;
+}
+.shopmap-canvas:fullscreen { background: #f4f4f4; }
+
+/* Botão de tela cheia do Leaflet */
+.shopmap-fs-btn {
+    display: block;
+    width: 30px;
+    height: 30px;
+    line-height: 30px;
+    text-align: center;
+    font-size: 16px;
+    background: #fff;
+    color: #333;
+    text-decoration: none;
+}
+.shopmap-fs-btn:hover { background: #f4f4f4; color: #000; }
