@@ -8,12 +8,19 @@
  *                     [strand_count], [comment], [points])
  * POST action=delete (id)
  *
+ * Bloco 4c — registro opcional em NetworkPort do core:
+ * POST action=portinfo   (id) → lados A/B com portas livres/ocupadas
+ * POST action=portlink   (id, ports_id_a|new_name_a, ports_id_b|new_name_b)
+ * POST action=portunlink (id)
+ * As três exigem também o direito 'networking' do core (UPDATE).
+ *
  * CSRF: validado pelo core em POST; respostas devolvem token novo em
  * 'csrf'. Entidade: validada via Floorplan::getById em toda operação.
  */
 
 use GlpiPlugin\Shopmap\Connection;
 use GlpiPlugin\Shopmap\Floorplan;
+use GlpiPlugin\Shopmap\PortLink;
 
 include('../../../inc/includes.php');
 
@@ -106,6 +113,47 @@ switch ($action) {
     case 'delete':
         $conn = smc_conn_checked((int) ($_POST['id'] ?? 0));
         smc_reply(['ok' => Connection::delete((int) $conn['id'])]);
+        // sem break
+
+    case 'portinfo':
+        $conn = smc_conn_checked((int) ($_POST['id'] ?? 0));
+        if (!Session::haveRight('networking', UPDATE)) {
+            smc_reply(['ok' => false, 'error' => 'seu perfil não tem o direito "Rede" (networking) do GLPI'], 403);
+        }
+        smc_reply(['ok' => true, 'info' => PortLink::info($conn)]);
+        // sem break
+
+    case 'portlink':
+        $conn = smc_conn_checked((int) ($_POST['id'] ?? 0));
+        if (!Session::haveRight('networking', UPDATE)) {
+            smc_reply(['ok' => false, 'error' => 'seu perfil não tem o direito "Rede" (networking) do GLPI'], 403);
+        }
+        $res = PortLink::link(
+            $conn,
+            (int) ($_POST['ports_id_a'] ?? 0),
+            (string) ($_POST['new_name_a'] ?? ''),
+            (int) ($_POST['ports_id_b'] ?? 0),
+            (string) ($_POST['new_name_b'] ?? '')
+        );
+        if (!$res['ok']) {
+            smc_reply(['ok' => false, 'error' => $res['error']], 400);
+        }
+        smc_reply([
+            'ok'         => true,
+            'connection' => smc_find((int) $conn['plugin_shopmap_floorplans_id'], (int) $conn['id']),
+        ]);
+        // sem break
+
+    case 'portunlink':
+        $conn = smc_conn_checked((int) ($_POST['id'] ?? 0));
+        if (!Session::haveRight('networking', UPDATE)) {
+            smc_reply(['ok' => false, 'error' => 'seu perfil não tem o direito "Rede" (networking) do GLPI'], 403);
+        }
+        $ok = PortLink::unlink($conn);
+        smc_reply([
+            'ok'         => $ok,
+            'connection' => smc_find((int) $conn['plugin_shopmap_floorplans_id'], (int) $conn['id']),
+        ]);
         // sem break
 }
 

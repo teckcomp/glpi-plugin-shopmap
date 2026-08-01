@@ -76,6 +76,14 @@
 .sm-cpop input[type=text] { width: 100%; box-sizing: border-box; padding: 2px 4px; }
 .sm-cpop-row { display: flex; gap: 8px; }
 .sm-cpop-row > span { flex: 1; }
+
+/* Bloco 4c — registro em NetworkPort */
+.sm-cpop-ports { border-top: 1px solid #e3e3e3; margin-top: 8px; padding-top: 6px; }
+.sm-cpop-plinked { color: #1a7f4e; margin-bottom: 4px; }
+.sm-cpop-pside { margin-bottom: 4px; }
+.sm-cpop-pmsg { color: #a05a00; margin: 4px 0; }
+.sm-cpop-pgo { margin-top: 6px; }
+.sm-cpop-pnew.d-none { display: none; }
 #shopmap-toolbar #shopmap-draw-cable.active,
 #shopmap-toolbar #shopmap-quick-connect.active { background: #e0a800; color: #fff; }
 

@@ -157,6 +157,43 @@
         return state.base === 'all';
     }
 
+    /** Cabo registrado em NetworkPort dos dois lados? (Bloco 4c) */
+    function connLinked(conn) {
+        return (conn.networkports_id_a || 0) > 0 && (conn.networkports_id_b || 0) > 0;
+    }
+
+    /** Um lado do formulário de registro em portas (Bloco 4c). */
+    function portSideHtml(side, key, defName) {
+        var free = (side.ports || []).filter(function (p) { return !p.busy; });
+        var h = '<div class="sm-cpop-pside">' +
+            '<label class="sm-pop-lbl">Lado ' + key.toUpperCase() + ': ' +
+            esc(side.asset || side.shape || '?') + '</label>' +
+            '<select class="sm-cpop-psel" data-side="' + key + '">';
+        free.forEach(function (p) {
+            h += '<option value="' + p.id + '">' +
+                 esc(p.name || ('porta ' + p.number)) + ' (n\u00ba ' + p.number + ')</option>';
+        });
+        h += '<option value="0"' + (free.length === 0 ? ' selected' : '') + '>+ criar nova porta\u2026</option>' +
+             '</select>' +
+             '<input type="text" class="sm-cpop-pnew' + (free.length === 0 ? '' : ' d-none') + '"' +
+             ' data-side="' + key + '" maxlength="255" placeholder="nome da nova porta"' +
+             ' value="' + esc(defName) + '">' +
+             '</div>';
+        return h;
+    }
+
+    /** Formulário completo de registro (portinfo -> HTML). Puro p/ teste. */
+    function portFormHtml(info, defName) {
+        if (!info || !info.can) {
+            return '<div class="sm-cpop-pmsg">' +
+                esc((info && info.reason) || 'Registro indispon\u00edvel para este cabo.') +
+                '</div>';
+        }
+        return portSideHtml(info.a, 'a', defName) +
+               portSideHtml(info.b, 'b', defName) +
+               '<button type="button" class="sm-pop-btn sm-cpop-pgo">Confirmar registro</button>';
+    }
+
     function connPopupHtml(conn, names, canUpdate) {
         var meta = cableMeta(conn.cable_type);
         var h = '<div class="sm-cpop" data-conn-id="' + conn.id + '">';
@@ -168,6 +205,7 @@
                  (conn.cable_label ? ' \u00b7 ' + esc(conn.cable_label) : '') +
                  (conn.length_m > 0 ? ' \u00b7 ' + conn.length_m + ' m' : '') +
                  (conn.strand_count > 0 ? ' \u00b7 ' + conn.strand_count + ' fibras/pares' : '') +
+                 (connLinked(conn) ? ' \u00b7 registrado em portas' : '') +
                  '</div>';
             return h + '</div>';
         }
@@ -189,6 +227,19 @@
              '<span><label class="sm-pop-lbl">Fibras/pares</label>' +
              '<input type="text" class="sm-cpop-strands" value="' + (conn.strand_count > 0 ? conn.strand_count : '') + '"></span>' +
              '</div>';
+
+        // Bloco 4c: registro opcional em NetworkPort do core
+        h += '<div class="sm-cpop-ports">';
+        if (connLinked(conn)) {
+            h += '<div class="sm-cpop-plinked"><i class="ti ti-plug-connected"></i> ' +
+                 'Registrado em portas de rede (GLPI)</div>' +
+                 '<button type="button" class="sm-pop-btn sm-cpop-punlink">Desfazer registro</button>';
+        } else {
+            h += '<button type="button" class="sm-pop-btn sm-cpop-plink">' +
+                 '<i class="ti ti-plug"></i> Registrar em portas de rede</button>' +
+                 '<div class="sm-cpop-pform d-none"></div>';
+        }
+        h += '</div>';
 
         h += '<div class="sm-pop-actions">' +
              '<button type="button" class="sm-pop-btn sm-cpop-save">Salvar</button>' +
@@ -843,6 +894,83 @@
             });
         }
 
+        // ---- Bloco 4c: registro em NetworkPort ----
+        var plink = q('.sm-cpop-plink');
+        if (plink) {
+            plink.addEventListener('click', function () {
+                plink.disabled = true;
+                self.postConn({ action: 'portinfo', id: id }, function (data) {
+                    var form = q('.sm-cpop-pform');
+                    if (!form) { return; }
+                    form.classList.remove('d-none');
+                    if (!data.ok) {
+                        form.innerHTML = '<div class="sm-cpop-pmsg">' +
+                            esc(data.error || 'falha ao consultar as portas') + '</div>';
+                        return;
+                    }
+                    var conn = self.conns[id] || {};
+                    var defName = conn.cable_label || ('ShopMap cabo #' + id);
+                    form.innerHTML = portFormHtml(data.info, defName);
+
+                    // "+ criar nova porta…" mostra o campo de nome do lado
+                    form.querySelectorAll('.sm-cpop-psel').forEach(function (sel) {
+                        sel.addEventListener('change', function () {
+                            var inp = form.querySelector(
+                                '.sm-cpop-pnew[data-side="' + sel.getAttribute('data-side') + '"]');
+                            if (inp) { inp.classList.toggle('d-none', sel.value !== '0'); }
+                        });
+                    });
+
+                    var go = form.querySelector('.sm-cpop-pgo');
+                    if (go) {
+                        go.addEventListener('click', function () {
+                            var v = function (side) {
+                                var sel = form.querySelector('.sm-cpop-psel[data-side="' + side + '"]');
+                                var inp = form.querySelector('.sm-cpop-pnew[data-side="' + side + '"]');
+                                return {
+                                    id: sel ? (parseInt(sel.value, 10) || 0) : 0,
+                                    name: inp ? inp.value : ''
+                                };
+                            };
+                            var a = v('a');
+                            var b = v('b');
+                            go.disabled = true;
+                            self.postConn({
+                                action: 'portlink',
+                                id: id,
+                                ports_id_a: a.id,
+                                new_name_a: a.name,
+                                ports_id_b: b.id,
+                                new_name_b: b.name
+                            }, function (res) {
+                                if (res.ok && res.connection) {
+                                    self.refreshLine(res.connection);
+                                    self.map.closePopup();
+                                    self.setHint('Cabo registrado em portas de rede do GLPI.');
+                                } else {
+                                    go.disabled = false;
+                                    window.alert(res.error || 'falha ao registrar as portas');
+                                }
+                            });
+                        });
+                    }
+                });
+            });
+        }
+
+        var punlink = q('.sm-cpop-punlink');
+        if (punlink) {
+            punlink.addEventListener('click', function () {
+                if (!window.confirm('Desfazer o registro em portas? As portas continuam no ativo; s\u00f3 a conex\u00e3o entre elas \u00e9 removida.')) {
+                    return;
+                }
+                self.postConn({ action: 'portunlink', id: id }, function (data) {
+                    if (data.ok && data.connection) { self.refreshLine(data.connection); }
+                    self.map.closePopup();
+                });
+            });
+        }
+
         var del = q('.sm-cpop-del');
         if (del) {
             del.addEventListener('click', function () {
@@ -863,6 +991,8 @@
         _esc: esc,
         _cableMeta: cableMeta,
         _cableVisible: cableVisible,
+        _connLinked: connLinked,
+        _portFormHtml: portFormHtml,
         _connPopupHtml: connPopupHtml,
         _iconClass: iconClass,
         _iconHtml: iconHtml,

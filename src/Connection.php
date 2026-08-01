@@ -58,6 +58,9 @@ class Connection
                 'length_m'     => (float) ($row['length_m'] ?? 0),
                 'strand_count' => (int) ($row['strand_count'] ?? 0),
                 'comment'      => (string) ($row['comment'] ?? ''),
+                // Bloco 4c: o front usa só a flag "registrado ou não"
+                'networkports_id_a' => (int) ($row['networkports_id_a'] ?? 0),
+                'networkports_id_b' => (int) ($row['networkports_id_b'] ?? 0),
             ];
         }
         return $rows;
@@ -192,11 +195,35 @@ class Connection
         return (bool) $DB->update('glpi_plugin_shopmap_connections', $upd, ['id' => $id]);
     }
 
+    /**
+     * Grava/zera o par de portas do core na conexão (Bloco 4c).
+     * Uso interno do PortLink — a validação das portas é lá.
+     */
+    public static function setPorts(int $id, int $portA, int $portB): bool
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        return (bool) $DB->update('glpi_plugin_shopmap_connections', [
+            'networkports_id_a' => max(0, $portA),
+            'networkports_id_b' => max(0, $portB),
+            'date_mod'          => date('Y-m-d H:i:s'),
+        ], ['id' => $id]);
+    }
+
+    /**
+     * Excluir o cabo desfaz também o registro em NetworkPort (o vínculo
+     * NetworkPort_NetworkPort — as portas ficam no ativo).
+     */
     public static function delete(int $id): bool
     {
         /** @var \DBmysql $DB */
         global $DB;
 
+        $conn = self::get($id);
+        if ($conn !== null && (int) ($conn['networkports_id_a'] ?? 0) > 0) {
+            PortLink::unlink($conn);
+        }
         return (bool) $DB->delete('glpi_plugin_shopmap_connections', ['id' => $id]);
     }
 }

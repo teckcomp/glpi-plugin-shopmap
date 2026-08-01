@@ -174,15 +174,25 @@ class Shape
     }
 
     /**
-     * Remove o shape e as conexões que chegam/saem dele.
+     * Remove o shape e as conexões que chegam/saem dele. Passa por
+     * Connection::delete para desfazer eventuais registros em
+     * NetworkPort do core (Bloco 4c) — nunca delete cru na tabela.
      */
     public static function delete(int $id): bool
     {
         /** @var \DBmysql $DB */
         global $DB;
 
-        $DB->delete('glpi_plugin_shopmap_connections', ['shapes_id_a' => $id]);
-        $DB->delete('glpi_plugin_shopmap_connections', ['shapes_id_b' => $id]);
+        $it = $DB->request([
+            'FROM'  => 'glpi_plugin_shopmap_connections',
+            'WHERE' => ['OR' => [
+                'glpi_plugin_shopmap_connections.shapes_id_a' => $id,
+                'glpi_plugin_shopmap_connections.shapes_id_b' => $id,
+            ]],
+        ]);
+        foreach ($it as $row) {
+            Connection::delete((int) $row['id']);
+        }
         return (bool) $DB->delete('glpi_plugin_shopmap_shapes', ['id' => $id]);
     }
 
