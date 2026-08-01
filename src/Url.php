@@ -39,4 +39,22 @@ final class Url
     {
         return self::base() . '/' . ltrim($path, '/');
     }
+
+    /**
+     * URL de recurso ESTÁTICO (js/css) com cache-buster `?v=<mtime>`.
+     *
+     * O front controller do GLPI 11 serve `public/` com cache agressivo
+     * no navegador; sem versionar a URL, o cliente segue executando o
+     * JS antigo mesmo depois de atualizar o bloco — inclusive com
+     * Ctrl+F5 em alguns cenários (lição do Bloco 4d r4). A versão é o
+     * mtime do arquivo: muda sozinha a cada bloco aplicado.
+     */
+    public static function asset(string $path): string
+    {
+        $path = ltrim($path, '/');
+        $file = dirname(__DIR__) . '/public/' . $path;
+        $v    = is_file($file) ? (string) filemtime($file) : '0';
+
+        return self::to($path) . '?v=' . $v;
+    }
 }

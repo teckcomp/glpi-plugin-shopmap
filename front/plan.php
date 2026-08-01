@@ -55,9 +55,9 @@ TemplateRenderer::getInstance()->display('@shopmap/plan.html.twig', [
         'plan_name'   => (string) $plan['name'],
         'plan_json'   => $planJson,
         'back_url'    => Url::to('front/index.php'),
-        'leaflet_css' => Url::to('js/leaflet/leaflet.css'),
-        'leaflet_js'  => Url::to('js/leaflet/leaflet.js'),
-        'plan_js'     => Url::to('js/shopmap-plan.js'),
+        'leaflet_css' => Url::asset('js/leaflet/leaflet.css'),
+        'leaflet_js'  => Url::asset('js/leaflet/leaflet.js'),
+        'plan_js'     => Url::asset('js/shopmap-plan.js'),
     ],
 ]);
 

@@ -7,11 +7,24 @@
  * para mover, e editar num popup (rótulo, ativo do GLPI, destino da
  * rota, excluir). Persistência via ajax/shape.php com CSRF rotativo.
  *
+ * Bloco 4d — visibilidade de cabos sob demanda: cabos OCULTOS por
+ * padrão; clique num shape acende só os cabos dele (os demais somem);
+ * clique no vazio limpa o foco; toggle geral no canto (abaixo da tela
+ * cheia); modo de desenho força tudo visível e restaura ao sair. O
+ * mesmo mecanismo de foco será reutilizado pela rota BFS (Fase 3).
+ *
  * Coordenadas: shape.x/y em px do SVG; Leaflet CRS.Simple usa
  * latlng = [y, x].
  */
 (function () {
     'use strict';
+
+    // r3: o GLPI 11 carrega o PRÓPRIO Leaflet (leaflet.min.js?v=...) de
+    // forma assíncrona e sobrescreve window.L DEPOIS do nosso. Misturar
+    // os dois builds quebra tudo que é criado após o load (preview do
+    // traçado, cabo novo): "Cannot read properties of undefined ('x')".
+    // Fixamos a NOSSA instância e devolvemos window.L ao core.
+    var L = (window.L && window.L.noConflict) ? window.L.noConflict() : window.L;
 
     // ---------- helpers puros (testáveis) ----------
 
@@ -130,6 +143,19 @@
     };
 
     function cableMeta(type) { return CABLE_META[type] || CABLE_META['']; }
+
+    /**
+     * Visibilidade de um cabo (Bloco 4d). state = { mode, focus, base }:
+     * modo de desenho ativo força tudo visível; foco num shape mostra só
+     * os cabos dele; sem foco vale o toggle geral (base 'all'|'hidden').
+     */
+    function cableVisible(state, conn) {
+        if (state.mode) { return true; }
+        if (state.focus) {
+            return conn.shapes_id_a === state.focus || conn.shapes_id_b === state.focus;
+        }
+        return state.base === 'all';
+    }
 
     function connPopupHtml(conn, names, canUpdate) {
         var meta = cableMeta(conn.cable_type);
@@ -251,13 +277,20 @@
         this.drawStart = 0;       // shape id inicial do desenho
         this.drawPoints = [];     // vertices intermediarios
         this.tempLine = null;     // preview do traçado
+        this.cableBase = 'hidden'; // toggle geral (4d): oculto por padrão
+        this.cableFocus = 0;      // shape em foco (0 = nenhum)
+        this.cablesBtn = null;    // botão do toggle (controle Leaflet)
 
         (cfg.shapes || []).forEach(function (s) { self.addMarker(s); });
         (cfg.connections || []).forEach(function (c) { self.addLine(c); });
+        this.addCablesControl();
+
+        // clique no mapa: sempre ligado (limpar foco vale também no modo
+        // leitura); ações de edição são barradas dentro de onMapClick
+        this.map.on('click', function (ev) { self.onMapClick(ev); });
 
         if (cfg.canUpdate) {
             this.bindToolbar();
-            this.map.on('click', function (ev) { self.onMapClick(ev); });
             document.addEventListener('keydown', function (ev) {
                 if (ev.key === 'Escape') { self.cancelDraw(); }
             });
@@ -334,6 +367,10 @@
             weight: 3,
             opacity: 0.9
         }).addTo(this.map);
+        // 4d r2: a linha fica SEMPRE no mapa; esconder é opacity 0 +
+        // pointer-events none. Remover/re-adicionar paths quebra o
+        // renderer SVG do Leaflet (só volta com F5).
+        this.styleLineVis(line, this.lineVisible(conn));
         line.on('click', function (ev) {
             if (ev && ev.originalEvent) { ev.originalEvent.stopPropagation(); }
             if (self.mode) { return; } // desenhando: ignora cliques no cabo
@@ -379,6 +416,59 @@
                 delete self.conns[cid];
             }
         });
+    };
+
+    // ---------- visibilidade de cabos (Bloco 4d) ----------
+
+    App.prototype.visState = function () {
+        return { mode: this.mode, focus: this.cableFocus, base: this.cableBase };
+    };
+
+    App.prototype.lineVisible = function (conn) {
+        return cableVisible(this.visState(), conn);
+    };
+
+    /** Aplica o estado atual a todas as linhas (sem tirar do mapa). */
+    App.prototype.applyCableVis = function () {
+        var self = this;
+        Object.keys(this.conns).forEach(function (cid) {
+            var line = self.lines[cid];
+            if (!line) { return; }
+            self.styleLineVis(line, self.lineVisible(self.conns[cid]));
+        });
+        if (this.cablesBtn) {
+            this.cablesBtn.classList.toggle('active', this.cableBase === 'all');
+        }
+    };
+
+    /** Mostra/esconde uma linha por estilo (renderer permanece vivo). */
+    App.prototype.styleLineVis = function (line, show) {
+        line.setStyle({ opacity: show ? 0.9 : 0 });
+        var el = line.getElement && line.getElement();
+        if (el) { el.style.pointerEvents = show ? '' : 'none'; }
+    };
+
+    /** Toggle geral "Mostrar cabos", abaixo do botão de tela cheia. */
+    App.prototype.addCablesControl = function () {
+        var self = this;
+        var Ctl = L.Control.extend({
+            options: { position: 'topleft' },
+            onAdd: function () {
+                var btn = L.DomUtil.create('a', 'leaflet-bar shopmap-cables-btn');
+                btn.href = '#';
+                btn.title = 'Mostrar/ocultar todos os cabos';
+                btn.innerHTML = '<i class="ti ti-route"></i>';
+                L.DomEvent.on(btn, 'click', function (ev) {
+                    L.DomEvent.stop(ev);
+                    self.cableBase = (self.cableBase === 'all') ? 'hidden' : 'all';
+                    self.cableFocus = 0;
+                    self.applyCableVis();
+                });
+                self.cablesBtn = btn;
+                return btn;
+            }
+        });
+        this.map.addControl(new Ctl());
     };
 
     /**
@@ -433,6 +523,7 @@
     App.prototype.setMode = function (mode) {
         this.cancelDraw();
         this.mode = mode;
+        this.applyCableVis(); // 4d: modo de desenho força cabos visíveis; sair restaura
         var draw = document.getElementById('shopmap-draw-cable');
         var quick = document.getElementById('shopmap-quick-connect');
         if (draw) { draw.classList.toggle('active', mode === 'draw'); }
@@ -459,12 +550,19 @@
     App.prototype.onShapeClick = function (shapeId) {
         var self = this;
 
-        // modo normal: abre o popup de edição do shape
+        // modo normal: foca os cabos do shape (4d) e abre o popup
         if (!this.mode) {
+            this.cableFocus = shapeId;
+            this.applyCableVis();
             var s = this.shapes[shapeId];
+            var links = this.linksOf(shapeId);
+            if (links.length > 0) {
+                this.setHint('Mostrando ' + links.length + ' cabo(s) de ' +
+                    this.shapeName(shapeId) + ' \u00b7 clique no vazio da planta para ocultar');
+            }
             L.popup({ minWidth: 230 })
                 .setLatLng([s.y, s.x])
-                .setContent(popupHtml(s, this.cfg.canUpdate, this.linksOf(shapeId)))
+                .setContent(popupHtml(s, this.cfg.canUpdate, links))
                 .openOn(this.map);
             return;
         }
@@ -497,6 +595,10 @@
         this.postConn(params, function (data) {
             self.setMode(null);
             if (data.ok && data.connection) {
+                // 4d: ao sair do modo os cabos voltariam a sumir; foca o
+                // shape de origem para o cabo novo ficar aceso com o popup
+                self.cableFocus = data.connection.shapes_id_a;
+                self.applyCableVis();
                 self.addLine(data.connection);
                 // abre direto a edição dos atributos do cabo recém-criado
                 var c = data.connection;
@@ -560,6 +662,16 @@
 
     App.prototype.onMapClick = function (ev) {
         var self = this;
+
+        // 4d: clique no vazio (fora de modo) limpa o foco de cabos
+        if (!this.mode && this.cableFocus) {
+            this.cableFocus = 0;
+            this.applyCableVis();
+            this.setHint('Arraste um shape para reposicionar \u00b7 clique nele para editar');
+        }
+
+        // daqui para baixo é tudo edição
+        if (!this.cfg.canUpdate) { return; }
 
         // modo de conexão SEM origem: clique perto de um shape conta
         // como clique nele; longe de todos, avisa em vez de silenciar
@@ -750,6 +862,7 @@
     window.ShopMapPlan = {
         _esc: esc,
         _cableMeta: cableMeta,
+        _cableVisible: cableVisible,
         _connPopupHtml: connPopupHtml,
         _iconClass: iconClass,
         _iconHtml: iconHtml,
