@@ -54,7 +54,7 @@
             '</div>';
     }
 
-    function popupHtml(shape, canUpdate) {
+    function popupHtml(shape, canUpdate, links) {
         var meta = TYPE_META[shape.shapetype] || TYPE_META.equipment;
         var h = '<div class="sm-pop" data-shape-id="' + shape.id + '">';
         h += '<div class="sm-pop-type">' + meta.label + (shape.is_route_target ? ' \u2605 destino da rota' : '') + '</div>';
@@ -67,6 +67,29 @@
             h += '<div class="sm-pop-asset"><a href="' + esc(shape.dgo_url) + '" target="_blank">' +
                  '<i class="ti ti-grid-dots"></i> Mapa de portas (DGO+) \u2197</a></div>';
         }
+        if (shape.dgo_ports) {
+            h += '<div class="sm-pop-asset">Portas: <strong>' + shape.dgo_ports.documented +
+                 '/' + shape.dgo_ports.total + '</strong> documentadas</div>';
+        }
+
+        // Painel de ligações (Bloco 4b): todos os cabos deste shape
+        links = links || [];
+        h += '<div class="sm-pop-links"><div class="sm-pop-lbl">Liga\u00e7\u00f5es (' + links.length + ')</div>';
+        if (links.length === 0) {
+            h += '<div class="sm-pop-muted-txt">nenhum cabo conectado</div>';
+        } else {
+            h += '<ul>';
+            links.forEach(function (lk) {
+                h += '<li><span class="sm-link-dot" style="background:' + lk.color + '"></span>' +
+                     '\u2194 ' + esc(lk.other) +
+                     ' <span class="sm-pop-muted-txt">' + lk.typeLabel +
+                     (lk.label ? ' \u00b7 ' + esc(lk.label) : '') +
+                     (lk.length > 0 ? ' \u00b7 ' + lk.length + ' m' : '') +
+                     '</span></li>';
+            });
+            h += '</ul>';
+        }
+        h += '</div>';
 
         if (!canUpdate) {
             h += (shape.label ? '<div>' + esc(shape.label) + '</div>' : '');
@@ -378,6 +401,25 @@
         return bestId;
     };
 
+    /** Ligações de um shape, prontas para o popup (Bloco 4b). */
+    App.prototype.linksOf = function (shapeId) {
+        var self = this;
+        var out = [];
+        Object.keys(this.conns).forEach(function (cid) {
+            var c = self.conns[cid];
+            if (c.shapes_id_a !== shapeId && c.shapes_id_b !== shapeId) { return; }
+            var otherId = (c.shapes_id_a === shapeId) ? c.shapes_id_b : c.shapes_id_a;
+            out.push({
+                other: self.shapeName(otherId),
+                typeLabel: cableMeta(c.cable_type).label,
+                color: cableMeta(c.cable_type).color,
+                label: c.cable_label,
+                length: c.length_m
+            });
+        });
+        return out;
+    };
+
     App.prototype.shapeName = function (id) {
         var s = this.shapes[id];
         return s ? (s.label || s.asset_name || ('#' + id)) : ('#' + id);
@@ -422,7 +464,7 @@
             var s = this.shapes[shapeId];
             L.popup({ minWidth: 230 })
                 .setLatLng([s.y, s.x])
-                .setContent(popupHtml(s, this.cfg.canUpdate))
+                .setContent(popupHtml(s, this.cfg.canUpdate, this.linksOf(shapeId)))
                 .openOn(this.map);
             return;
         }

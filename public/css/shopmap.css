@@ -78,3 +78,11 @@
 .sm-cpop-row > span { flex: 1; }
 #shopmap-toolbar #shopmap-draw-cable.active,
 #shopmap-toolbar #shopmap-quick-connect.active { background: #e0a800; color: #fff; }
+
+
+/* Painel de ligações no popup do shape (Bloco 4b) */
+.sm-pop-links { margin-top: 8px; border-top: 1px solid #e3e3e3; padding-top: 4px; }
+.sm-pop-links ul { list-style: none; margin: 2px 0 0; padding: 0; max-height: 120px; overflow-y: auto; }
+.sm-pop-links li { padding: 1px 0; }
+.sm-pop-muted-txt { color: #888; }
+.sm-link-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:4px; }

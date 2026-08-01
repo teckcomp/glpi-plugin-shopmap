@@ -60,6 +60,7 @@ class Shape
                 'asset_name'      => $assetName,
                 'asset_url'       => $assetUrl,
                 'dgo_url'         => self::dgoUrl($itemtype, $itemsId, $locationsId),
+                'dgo_ports'       => self::dgoPorts($itemtype, $itemsId),
             ];
         }
         return $rows;
@@ -211,6 +212,67 @@ class Shape
             (string) $itemtype::getFormURLWithID($itemsId, true),
             (int) ($item->fields['locations_id'] ?? 0),
         ];
+    }
+
+    /**
+     * Ocupação de portas de uma DGO, lida das tabelas do DGO+
+     * (colunas confirmadas no código: panels.tubes/fibers_per_tube,
+     * ports com is_deleted). Devolve null quando não é DGO, o DGO+
+     * está inativo ou as tabelas não existem — o front simplesmente
+     * não mostra a linha.
+     *
+     * @return array{documented:int,total:int}|null
+     */
+    public static function dgoPorts(string $itemtype, int $itemsId): ?array
+    {
+        if ($itemtype !== 'PassiveDCEquipment' || $itemsId <= 0 || !class_exists('Plugin')) {
+            return null;
+        }
+        $plugin = new \Plugin();
+        if (!$plugin->isActivated('dgoplus')) {
+            return null;
+        }
+
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        if (!$DB->tableExists('glpi_plugin_dgoplus_ports')) {
+            return null;
+        }
+
+        // Layout da grade (fallback = padrão do DGO+: 4 tubos x 16 fibras)
+        $tubes  = 4;
+        $fibers = 16;
+        if ($DB->tableExists('glpi_plugin_dgoplus_panels')) {
+            $it = $DB->request([
+                'FROM'  => 'glpi_plugin_dgoplus_panels',
+                'WHERE' => [
+                    'glpi_plugin_dgoplus_panels.itemtype' => 'PassiveDCEquipment',
+                    'glpi_plugin_dgoplus_panels.items_id' => $itemsId,
+                ],
+                'LIMIT' => 1,
+            ]);
+            foreach ($it as $row) {
+                $tubes  = max(1, (int) ($row['tubes'] ?? 4));
+                $fibers = max(1, (int) ($row['fibers_per_tube'] ?? 16));
+            }
+        }
+
+        $documented = 0;
+        $it = $DB->request([
+            'COUNT' => 'cpt',
+            'FROM'  => 'glpi_plugin_dgoplus_ports',
+            'WHERE' => [
+                'glpi_plugin_dgoplus_ports.itemtype'   => 'PassiveDCEquipment',
+                'glpi_plugin_dgoplus_ports.items_id'   => $itemsId,
+                'glpi_plugin_dgoplus_ports.is_deleted' => 0,
+            ],
+        ]);
+        foreach ($it as $row) {
+            $documented = (int) ($row['cpt'] ?? 0);
+        }
+
+        return ['documented' => $documented, 'total' => $tubes * $fibers];
     }
 
     /**
