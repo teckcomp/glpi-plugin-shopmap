@@ -26,9 +26,9 @@
                                maxlength="255" required placeholder="Ex.: Shopping Centro — Piso L1">
                     </div>
                     <div class="col-12 col-md-5">
-                        <label class="form-label" for="sm-plan-file">Arquivo da planta (SVG, PNG ou JPG)</label>
+                        <label class="form-label" for="sm-plan-file">Arquivo da planta (SVG, PDF, DXF, DWG, PNG ou JPG)</label>
                         <input type="file" class="form-control" id="sm-plan-file" name="planfile"
-                               accept=".svg,.png,.jpg,.jpeg" required>
+                               accept=".svg,.pdf,.dxf,.dwg,.png,.jpg,.jpeg" required>
                     </div>
                     <div class="col-12 col-md-3">
                         <input type="hidden" name="_glpi_csrf_token" value="{{ sm.csrf_token }}">
@@ -38,7 +38,7 @@
                     </div>
                     <div class="col-12">
                         <span class="text-muted small">
-                            SVG é o formato recomendado (zoom sem perda). DWG/DXF/PDF: conversão automática no próximo bloco.
+                            PDF/DXF/DWG são convertidos automaticamente para SVG (zoom sem perda). PNG/JPG funcionam, mas desfocam no zoom.
                         </span>
                     </div>
                 </form>
@@ -62,13 +62,21 @@
                         <div class="card-body d-flex flex-column">
                             <h4 class="card-title mb-1">{{ plan.name }}</h4>
                             <div class="mb-2">
-                                <span class="badge bg-secondary text-white">{{ plan.conversion_status }}</span>
+                                {% set st = plan.conversion_status %}
+                                <span class="badge text-white {{ st == 'done' ? 'bg-success' : (st == 'error' ? 'bg-danger' : 'bg-warning') }}">
+                                    {{ st == 'done' ? 'pronta' : (st == 'error' ? 'erro na conversão' : st) }}
+                                </span>
                             </div>
+                            {% if st == 'error' and plan.conversion_error %}
+                                <div class="text-danger small mb-2">{{ plan.conversion_error }}</div>
+                            {% endif %}
                             <div class="text-muted small mb-3">Atualizada em {{ plan.date_mod }}</div>
                             <div class="mt-auto d-flex gap-2">
-                                <a class="btn btn-primary btn-sm" href="{{ sm.plan_url }}?id={{ plan.id }}">
-                                    <i class="ti ti-map-2 me-1"></i>Abrir
-                                </a>
+                                {% if plan.conversion_status == 'done' %}
+                                    <a class="btn btn-primary btn-sm" href="{{ sm.plan_url }}?id={{ plan.id }}">
+                                        <i class="ti ti-map-2 me-1"></i>Abrir
+                                    </a>
+                                {% endif %}
                                 {% if sm.can_delete %}
                                     <form method="post" action="{{ sm.form_url }}"
                                           onsubmit="return confirm('Excluir a planta \'{{ plan.name|e('js') }}\'? Shapes e conexões dela também serão removidos.');">

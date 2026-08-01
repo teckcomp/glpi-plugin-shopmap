@@ -16,11 +16,11 @@ namespace GlpiPlugin\Shopmap;
  */
 class Floorplan
 {
-    /** Extensões aceitas neste bloco (minúsculas). */
+    /** Extensões de uso direto, sem conversão (minúsculas). */
     public const ALLOWED_EXT = ['svg', 'png', 'jpg', 'jpeg'];
 
-    /** Extensões reservadas para o Bloco 2b (conversão). */
-    public const FUTURE_EXT = ['dwg', 'dxf', 'pdf'];
+    /** Extensões convertidas para SVG no upload (Bloco 2b). */
+    public const CONVERT_EXT = ['pdf', 'dxf', 'dwg'];
 
     /**
      * Diretório físico dos arquivos de planta (cria se não existir).
@@ -89,7 +89,7 @@ class Floorplan
             'name'              => $name,
             'entities_id'       => (int) ($_SESSION['glpiactive_entity'] ?? 0),
             'is_recursive'      => 0,
-            'conversion_status' => 'done', // svg/png/jpg dispensam conversão
+            'conversion_status' => 'done', // ajustado adiante quando há conversão
             'date_creation'     => $now,
             'date_mod'          => $now,
         ]);
@@ -98,19 +98,52 @@ class Floorplan
         }
         $id = (int) $DB->insertId();
 
-        $filename = 'plan_' . $id . '.' . $ext;
-        $dest     = self::filePath($filename);
-        if (!self::moveUploaded($tmpFile, $dest)) {
+        $needsConvert = in_array($ext, self::CONVERT_EXT, true);
+
+        // Original: uso direto vira o próprio arquivo de exibição;
+        // formato convertível é guardado como orig_<id> (fonte para
+        // reprocessos futuros) e o SVG é gerado ao lado.
+        $srcName = ($needsConvert ? 'orig_' : 'plan_') . $id . '.' . $ext;
+        $srcPath = self::filePath($srcName);
+        if (!self::moveUploaded($tmpFile, $srcPath)) {
             $DB->delete('glpi_plugin_shopmap_floorplans', ['id' => $id]);
             return 0;
         }
 
-        [$w, $h] = self::probeDims($dest, $ext);
+        if (!$needsConvert) {
+            [$w, $h] = self::probeDims($srcPath, $ext);
+            $DB->update('glpi_plugin_shopmap_floorplans', [
+                'svg_filename' => $srcName,
+                'svg_width'    => $w,
+                'svg_height'   => $h,
+            ], ['id' => $id]);
+            return $id;
+        }
 
+        // Conversão síncrona (decisão do Bloco 2b; assíncrono fica como
+        // refinamento futuro). O registro permanece mesmo em erro, com
+        // status 'error' + mensagem no card — reenviar substitui.
+        $DB->update('glpi_plugin_shopmap_floorplans', ['conversion_status' => 'processing'], ['id' => $id]);
+
+        $svgName = 'plan_' . $id . '.svg';
+        $svgPath = self::filePath($svgName);
+        [$ok, $err] = Converter::toSvg($srcPath, $ext, $svgPath);
+
+        if (!$ok) {
+            $DB->update('glpi_plugin_shopmap_floorplans', [
+                'conversion_status' => 'error',
+                'conversion_error'  => mb_substr($err, 0, 1000),
+            ], ['id' => $id]);
+            return $id;
+        }
+
+        [$w, $h] = self::probeDims($svgPath, 'svg');
         $DB->update('glpi_plugin_shopmap_floorplans', [
-            'svg_filename' => $filename,
-            'svg_width'    => $w,
-            'svg_height'   => $h,
+            'svg_filename'      => $svgName,
+            'svg_width'         => $w,
+            'svg_height'        => $h,
+            'conversion_status' => 'done',
+            'conversion_error'  => '',
         ], ['id' => $id]);
 
         return $id;
@@ -133,6 +166,13 @@ class Floorplan
             $path = self::filePath($plan['svg_filename']);
             if (is_file($path)) {
                 @unlink($path);
+            }
+        }
+        // Original de formatos convertidos (orig_<id>.pdf/dxf/dwg)
+        foreach (self::CONVERT_EXT as $cext) {
+            $orig = self::filePath('orig_' . $id . '.' . $cext);
+            if (is_file($orig)) {
+                @unlink($orig);
             }
         }
 
@@ -177,10 +217,14 @@ class Floorplan
         $w = 0;
         $h = 0;
         // (?<![-\w]) impede casar data-width / stroke-width etc.
-        if (preg_match('/(?<![-\w])width\s*=\s*["\']?([0-9.]+)\s*(?:px)?["\']?/i', $tag, $mw)) {
+        // Unidade != px (mm, cm, in... — o ezdxf emite mm) é IGNORADA:
+        // nesses casos o viewBox é a medida certa do canvas lógico.
+        if (preg_match('/(?<![-\w])width\s*=\s*["\']?([0-9.]+)\s*([a-z%]*)["\']?/i', $tag, $mw)
+            && in_array(strtolower($mw[2]), ['', 'px'], true)) {
             $w = (int) round((float) $mw[1]);
         }
-        if (preg_match('/(?<![-\w])height\s*=\s*["\']?([0-9.]+)\s*(?:px)?["\']?/i', $tag, $mh)) {
+        if (preg_match('/(?<![-\w])height\s*=\s*["\']?([0-9.]+)\s*([a-z%]*)["\']?/i', $tag, $mh)
+            && in_array(strtolower($mh[2]), ['', 'px'], true)) {
             $h = (int) round((float) $mh[1]);
         }
         if (($w === 0 || $h === 0)

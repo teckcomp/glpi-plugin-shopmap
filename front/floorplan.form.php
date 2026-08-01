@@ -6,6 +6,7 @@
  * CSRF: validado automaticamente pelo core em POST (token no formulário).
  */
 
+use GlpiPlugin\Shopmap\Converter;
 use GlpiPlugin\Shopmap\Floorplan;
 use GlpiPlugin\Shopmap\Url;
 
@@ -45,29 +46,42 @@ if (!is_array($file) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK
 
 $ext = strtolower((string) pathinfo((string) $file['name'], PATHINFO_EXTENSION));
 
-if (in_array($ext, Floorplan::FUTURE_EXT, true)) {
+if (!in_array($ext, Floorplan::ALLOWED_EXT, true)
+    && !in_array($ext, Floorplan::CONVERT_EXT, true)) {
     Session::addMessageAfterRedirect(
-        __('DWG/DXF/PDF serão aceitos no próximo bloco (conversão automática para SVG). Por enquanto, envie SVG, PNG ou JPG.', 'shopmap'),
-        true,
-        WARNING
-    );
-    Html::redirect(Url::to('front/index.php'));
-}
-
-if (!in_array($ext, Floorplan::ALLOWED_EXT, true)) {
-    Session::addMessageAfterRedirect(
-        sprintf(__('Formato não suportado (.%s). Aceitos: SVG, PNG, JPG.', 'shopmap'), $ext),
+        sprintf(__('Formato não suportado (.%s). Aceitos: SVG, PDF, DXF, DWG, PNG, JPG.', 'shopmap'), $ext),
         true,
         ERROR
     );
     Html::redirect(Url::to('front/index.php'));
 }
 
+if (in_array($ext, Floorplan::CONVERT_EXT, true)) {
+    $missing = Converter::missingFor($ext);
+    if ($missing !== '') {
+        Session::addMessageAfterRedirect(
+            sprintf(__('Não é possível converter .%s: %s', 'shopmap'), $ext, $missing),
+            true,
+            ERROR
+        );
+        Html::redirect(Url::to('front/index.php'));
+    }
+}
+
 $id = Floorplan::createFromUpload($name, (string) $file['tmp_name'], $ext);
 
 if ($id > 0) {
-    Session::addMessageAfterRedirect(__('Planta cadastrada', 'shopmap'), true, INFO);
-    Html::redirect(Url::to('front/plan.php') . '?id=' . $id);
+    $plan = Floorplan::getById($id);
+    if ($plan !== null && $plan['conversion_status'] === 'done') {
+        Session::addMessageAfterRedirect(__('Planta cadastrada', 'shopmap'), true, INFO);
+        Html::redirect(Url::to('front/plan.php') . '?id=' . $id);
+    }
+    Session::addMessageAfterRedirect(
+        __('Planta registrada, mas a conversão falhou — veja o motivo no card', 'shopmap'),
+        true,
+        WARNING
+    );
+    Html::redirect(Url::to('front/index.php'));
 }
 
 Session::addMessageAfterRedirect(__('Falha ao gravar a planta (verifique permissões de files/_plugins)', 'shopmap'), true, ERROR);

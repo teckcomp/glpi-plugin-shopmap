@@ -52,6 +52,7 @@ class Dashboard extends CommonGLPI
                 'glpi_plugin_shopmap_floorplans.name',
                 'glpi_plugin_shopmap_floorplans.entities_id',
                 'glpi_plugin_shopmap_floorplans.conversion_status',
+                'glpi_plugin_shopmap_floorplans.conversion_error',
                 'glpi_plugin_shopmap_floorplans.date_mod',
             ],
             'FROM'   => 'glpi_plugin_shopmap_floorplans',
