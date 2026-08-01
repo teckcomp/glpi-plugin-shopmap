@@ -32,6 +32,9 @@
     display: flex; align-items: center; gap: 2px;
     transform: translate(-8px, -8px); /* centra o glifo no ponto */
     white-space: nowrap; cursor: pointer;
+    /* área de clique generosa sem mudar o visual (correção 4-2) */
+    padding: 8px; margin: -8px;
+    user-select: none;
 }
 .sm-shape-glyph { font-size: 18px; line-height: 18px; text-shadow: 0 0 3px #fff, 0 0 3px #fff; }
 .sm-shape i.sm-shape-glyph { font-style: normal; }
@@ -66,3 +69,12 @@
 .sm-pop-btn:hover { background: #eee; }
 .sm-pop-del { border-color: #d9534f; color: #d9534f; }
 #shopmap-toolbar .btn.active { background: #1a6dd8; color: #fff; }
+
+/* Conexões/cabos (Bloco 4) */
+.sm-cpop { font-size: 12px; min-width: 230px; }
+.sm-cpop select { width: 100%; padding: 2px 4px; }
+.sm-cpop input[type=text] { width: 100%; box-sizing: border-box; padding: 2px 4px; }
+.sm-cpop-row { display: flex; gap: 8px; }
+.sm-cpop-row > span { flex: 1; }
+#shopmap-toolbar #shopmap-draw-cable.active,
+#shopmap-toolbar #shopmap-quick-connect.active { background: #e0a800; color: #fff; }

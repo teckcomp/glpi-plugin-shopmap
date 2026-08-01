@@ -28,7 +28,14 @@
         <button type="button" class="btn btn-outline-primary btn-sm" data-shapetype="passbox">
             <i class="ti ti-square-rounded me-1"></i>Caixa de passagem
         </button>
-        <span class="text-muted ms-2 small">Arraste um shape para reposicionar · clique nele para editar</span>
+        <span class="mx-2 text-muted">|</span>
+        <button type="button" class="btn btn-outline-warning btn-sm" id="shopmap-draw-cable">
+            <i class="ti ti-route me-1"></i>Desenhar cabo
+        </button>
+        <button type="button" class="btn btn-outline-warning btn-sm" id="shopmap-quick-connect">
+            <i class="ti ti-plug-connected me-1"></i>Conectar (2 cliques)
+        </button>
+        <span class="text-muted ms-2 small" id="shopmap-hint">Arraste um shape para reposicionar · clique nele para editar</span>
     </div>
 
     <div id="shopmap-canvas" class="shopmap-canvas card"></div>

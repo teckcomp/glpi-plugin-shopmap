@@ -7,6 +7,7 @@
 
 use Glpi\Application\View\TemplateRenderer;
 use GlpiPlugin\Shopmap\Dashboard;
+use GlpiPlugin\Shopmap\Connection;
 use GlpiPlugin\Shopmap\Floorplan;
 use GlpiPlugin\Shopmap\Shape;
 use GlpiPlugin\Shopmap\Url;
@@ -39,9 +40,11 @@ $planJson = json_encode([
     'fileUrl'   => Url::to('front/planfile.php') . '?id=' . (int) $plan['id'],
     'width'     => (int) $plan['svg_width'],
     'height'    => (int) $plan['svg_height'],
-    'shapes'    => Shape::forPlan((int) $plan['id']),
+    'shapes'      => Shape::forPlan((int) $plan['id']),
+    'connections' => Connection::forPlan((int) $plan['id']),
     'canUpdate' => $canUpdate,
     'shapeUrl'  => Url::to('ajax/shape.php'),
+    'connUrl'   => Url::to('ajax/connection.php'),
     'assetUrl'  => Url::to('ajax/assetsearch.php'),
     'csrf'      => Session::getNewCSRFToken(),
 ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
