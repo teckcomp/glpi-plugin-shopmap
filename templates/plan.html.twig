@@ -16,6 +16,21 @@
         </div>
     </div>
 
+    {# Toolbar de shapes: o JS remove o d-none quando o usuário pode editar #}
+    <div id="shopmap-toolbar" class="d-none mb-2">
+        <span class="text-muted me-2 small">Adicionar (clique no botão e depois na planta):</span>
+        <button type="button" class="btn btn-outline-primary btn-sm" data-shapetype="equipment">
+            <i class="ti ti-cpu me-1"></i>Equipamento
+        </button>
+        <button type="button" class="btn btn-outline-primary btn-sm" data-shapetype="rack">
+            <i class="ti ti-server-2 me-1"></i>Rack
+        </button>
+        <button type="button" class="btn btn-outline-primary btn-sm" data-shapetype="passbox">
+            <i class="ti ti-square-rounded me-1"></i>Caixa de passagem
+        </button>
+        <span class="text-muted ms-2 small">Arraste um shape para reposicionar · clique nele para editar</span>
+    </div>
+
     <div id="shopmap-canvas" class="shopmap-canvas card"></div>
 </div>
 

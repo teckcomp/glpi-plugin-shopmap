@@ -24,3 +24,45 @@
     text-decoration: none;
 }
 .shopmap-fs-btn:hover { background: #f4f4f4; color: #000; }
+
+
+/* Shapes na planta (Bloco 3) */
+.sm-shape-wrap { background: none; border: none; }
+.sm-shape {
+    display: flex; align-items: center; gap: 2px;
+    transform: translate(-8px, -8px); /* centra o glifo no ponto */
+    white-space: nowrap; cursor: pointer;
+}
+.sm-shape-glyph { font-size: 18px; line-height: 18px; text-shadow: 0 0 3px #fff, 0 0 3px #fff; }
+.sm-shape i.sm-shape-glyph { font-style: normal; }
+.sm-shape-equipment .sm-shape-glyph { color: #1a6dd8; }
+.sm-shape-rack .sm-shape-glyph { color: #b8860b; }
+.sm-shape-passbox .sm-shape-glyph { color: #666; }
+.sm-shape-star { color: #b8860b; font-size: 12px; text-shadow: 0 0 3px #fff; }
+.sm-shape-label {
+    font-size: 11px; background: rgba(255,255,255,.85);
+    padding: 0 3px; border-radius: 3px; color: #222;
+}
+
+/* Popup de edição do shape */
+.sm-pop { font-size: 12px; min-width: 220px; }
+.sm-pop-type { font-weight: 600; margin-bottom: 4px; }
+.sm-pop-asset { margin-bottom: 6px; }
+.sm-pop-lbl { display: block; margin-top: 6px; color: #666; }
+.sm-pop input[type=text] { width: 100%; box-sizing: border-box; padding: 2px 4px; }
+.sm-pop-searchrow { display: flex; gap: 4px; }
+.sm-pop-searchrow input { flex: 1; }
+.sm-pop-results { list-style: none; margin: 4px 0; padding: 0; max-height: 110px; overflow-y: auto; }
+.sm-pop-results li { padding: 2px 4px; cursor: pointer; border-radius: 3px; }
+.sm-pop-results li:hover { background: #eef; }
+.sm-pop-results li.active { background: #cde; font-weight: 600; }
+.sm-pop-muted { color: #999; cursor: default; }
+.sm-pop-check { display: block; margin-top: 6px; }
+.sm-pop-actions { display: flex; gap: 6px; margin-top: 8px; }
+.sm-pop-btn {
+    border: 1px solid #bbb; background: #f7f7f7; border-radius: 4px;
+    padding: 2px 8px; cursor: pointer; font-size: 12px;
+}
+.sm-pop-btn:hover { background: #eee; }
+.sm-pop-del { border-color: #d9534f; color: #d9534f; }
+#shopmap-toolbar .btn.active { background: #1a6dd8; color: #fff; }
