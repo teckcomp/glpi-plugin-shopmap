@@ -63,9 +63,12 @@ class Install
      *  - equipment: equipamento de TI (normalmente com ativo vinculado)
      *  - rack:      rack/armário (candidato natural a is_route_target)
      *  - passbox:   caixa de passagem/emenda (a fibra passa por dentro)
+     *  - vago:      ponto de espera (Bloco 4f, decisão do usuário):
+     *               fibra lançada aguardando equipamento — sem ativo,
+     *               cabos com ponta aqui desenham tracejado
      *  - area:      área de loja/setor (polígono, sem ativo)
      */
-    public const SHAPE_TYPES = ['equipment', 'rack', 'passbox', 'area'];
+    public const SHAPE_TYPES = ['equipment', 'rack', 'passbox', 'vago', 'area'];
 
     public static function install(): bool
     {

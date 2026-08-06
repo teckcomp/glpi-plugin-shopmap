@@ -37,8 +37,18 @@
     var TYPE_META = {
         equipment: { label: 'Equipamento', cls: 'sm-shape-equipment', icon: 'ti-cpu' },
         rack:      { label: 'Rack',        cls: 'sm-shape-rack',      icon: 'ti-server-2' },
-        passbox:   { label: 'Caixa',       cls: 'sm-shape-passbox',   icon: 'ti-square-rounded' }
+        passbox:   { label: 'Caixa',       cls: 'sm-shape-passbox',   icon: 'ti-square-rounded' },
+        // Bloco 4f: ponto de espera — fibra lançada aguardando equipamento
+        vago:      { label: 'Vago (aguardando equipamento)', cls: 'sm-shape-vago', icon: 'ti-circle-dashed' }
     };
+
+    /** Cabo com ponta em shape Vago desenha TRACEJADO (Bloco 4f). */
+    function cableDash(conn, shapes) {
+        var a = shapes[conn.shapes_id_a];
+        var b = shapes[conn.shapes_id_b];
+        return ((a && a.shapetype === 'vago') || (b && b.shapetype === 'vago'))
+            ? '10 7' : null;
+    }
 
     // Ícone automático pelo TIPO DO ATIVO vinculado (Tabler, já carregado
     // pelo GLPI). Sem vínculo, vale o ícone do tipo de shape.
@@ -112,6 +122,19 @@
         h += '<label class="sm-pop-lbl">R\u00f3tulo</label>' +
              '<input type="text" class="sm-pop-label" maxlength="255" value="' + esc(shape.label) + '">';
 
+        if (shape.shapetype === 'vago') {
+            // Bloco 4f: vago não vincula ativo nem é destino de rota
+            h += '<div class="sm-pop-vago-hint"><i class="ti ti-circle-dashed"></i> ' +
+                 'Ponto vago \u2014 fibra lan\u00e7ada aguardando equipamento. ' +
+                 'Os cabos tracejados desta ponta est\u00e3o preservados.</div>';
+            h += '<div class="sm-pop-actions">' +
+                 '<button type="button" class="sm-pop-btn sm-pop-save">Salvar</button>' +
+                 '<button type="button" class="sm-pop-btn sm-pop-unvago">Converter em equipamento</button>' +
+                 '<button type="button" class="sm-pop-btn sm-pop-del">Excluir</button>' +
+                 '</div>';
+            return h + '</div>';
+        }
+
         h += '<label class="sm-pop-lbl">Vincular ativo (nome)</label>' +
              '<div class="sm-pop-searchrow">' +
              '<input type="text" class="sm-pop-search" placeholder="m\u00edn. 2 letras">' +
@@ -128,6 +151,9 @@
 
         h += '<div class="sm-pop-actions">' +
              '<button type="button" class="sm-pop-btn sm-pop-save">Salvar</button>' +
+             (shape.shapetype !== 'passbox'
+                ? '<button type="button" class="sm-pop-btn sm-pop-makevago" title="O equipamento saiu, a fibra fica lan\u00e7ada aguardando o pr\u00f3ximo">Converter em Vago</button>'
+                : '') +
              '<button type="button" class="sm-pop-btn sm-pop-del">Excluir</button>' +
              '</div>';
 
@@ -449,7 +475,8 @@
         var line = L.polyline(this.connLatLngs(conn), {
             color: cableMeta(conn.cable_type).color,
             weight: 3,
-            opacity: 0.9
+            opacity: 0.9,
+            dashArray: cableDash(conn, this.shapes)
         }).addTo(this.map);
         // 4d r2: a linha fica SEMPRE no mapa; esconder é opacity 0 +
         // pointer-events none. Remover/re-adicionar paths quebra o
@@ -472,8 +499,22 @@
         var line = this.lines[conn.id];
         if (line) {
             line.setLatLngs(this.connLatLngs(conn));
-            line.setStyle({ color: cableMeta(conn.cable_type).color });
+            line.setStyle({
+                color: cableMeta(conn.cable_type).color,
+                dashArray: cableDash(conn, this.shapes)
+            });
         }
+    };
+
+    /** Reaplica o tracejado 4f nas linhas de um shape (após conversão). */
+    App.prototype.restyleLinesOf = function (shapeId) {
+        var self = this;
+        Object.keys(this.conns).forEach(function (cid) {
+            var c = self.conns[cid];
+            if (c.shapes_id_a === shapeId || c.shapes_id_b === shapeId) {
+                self.lines[cid].setStyle({ dashArray: cableDash(c, self.shapes) });
+            }
+        });
     };
 
     App.prototype.redrawLinesOf = function (shapeId) {
@@ -899,6 +940,41 @@
             });
         }
 
+        // ---- Bloco 4f: converter em Vago / voltar de Vago ----
+        var makevago = q('.sm-pop-makevago');
+        if (makevago) {
+            makevago.addEventListener('click', function () {
+                if (!window.confirm('Converter em Vago?\n\nO ativo \u00e9 desvinculado e os cabos FICAM preservados (tracejados), aguardando o pr\u00f3ximo equipamento. Registros em portas de rede deste ponto s\u00e3o desfeitos (as portas ficam nos ativos).')) {
+                    return;
+                }
+                self.post({ action: 'makevago', id: id }, function (data) {
+                    if (data.ok && data.shape) {
+                        self.refreshMarker(data.shape);
+                        (data.connections || []).forEach(function (c) {
+                            self.refreshLine(c);
+                        });
+                        self.restyleLinesOf(id);
+                        self.setHint('Ponto convertido em Vago \u2014 fibras preservadas.');
+                    }
+                    self.map.closePopup();
+                });
+            });
+        }
+
+        var unvago = q('.sm-pop-unvago');
+        if (unvago) {
+            unvago.addEventListener('click', function () {
+                self.post({ action: 'settype', id: id, shapetype: 'equipment' }, function (data) {
+                    if (data.ok && data.shape) {
+                        self.refreshMarker(data.shape);
+                        self.restyleLinesOf(id);
+                        self.setHint('Agora vincule o ativo novo no popup do shape.');
+                    }
+                    self.map.closePopup();
+                });
+            });
+        }
+
         var del = q('.sm-pop-del');
         if (del) {
             del.addEventListener('click', function () {
@@ -1063,6 +1139,8 @@
         _connLinked: connLinked,
         _portFormHtml: portFormHtml,
         _endsFormHtml: endsFormHtml,
+        _cableDash: cableDash,
+        _shapePopupHtml: popupHtml,
         _connPopupHtml: connPopupHtml,
         _iconClass: iconClass,
         _iconHtml: iconHtml,

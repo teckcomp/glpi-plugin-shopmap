@@ -16,6 +16,7 @@
  */
 
 use GlpiPlugin\Shopmap\Floorplan;
+use GlpiPlugin\Shopmap\Connection;
 use GlpiPlugin\Shopmap\Shape;
 
 include('../../../inc/includes.php');
@@ -115,6 +116,43 @@ switch ($action) {
     case 'delete':
         $shape = sm_shape_checked((int) ($_POST['id'] ?? 0));
         sm_reply(['ok' => Shape::delete((int) $shape['id'])]);
+        // no break
+
+    // Bloco 4f: converter em Vago (preserva cabos; desfaz registro de
+    // portas e item efetivo do lado que saiu). Devolve o shape novo e
+    // TODAS as conexões da planta (flags/nomes mudaram).
+    case 'makevago':
+        $shape  = sm_shape_checked((int) ($_POST['id'] ?? 0));
+        $planId = (int) $shape['plugin_shopmap_floorplans_id'];
+        $ok = Shape::makeVago((int) $shape['id']);
+        $updated = null;
+        foreach (Shape::forPlan($planId) as $s) {
+            if ($s['id'] === (int) $shape['id']) {
+                $updated = $s;
+            }
+        }
+        sm_reply([
+            'ok'          => $ok,
+            'shape'       => $updated,
+            'connections' => Connection::forPlan($planId),
+        ]);
+        // no break
+
+    // Bloco 4f: caminho de volta (vago -> equipment/rack/passbox);
+    // o vínculo do ativo novo é feito em seguida pelo popup normal.
+    case 'settype':
+        $shape = sm_shape_checked((int) ($_POST['id'] ?? 0));
+        $ok = Shape::setType((int) $shape['id'], (string) ($_POST['shapetype'] ?? ''));
+        if (!$ok) {
+            sm_reply(['ok' => false, 'error' => 'conversão inválida (só a partir de Vago)'], 400);
+        }
+        $updated = null;
+        foreach (Shape::forPlan((int) $shape['plugin_shopmap_floorplans_id']) as $s) {
+            if ($s['id'] === (int) $shape['id']) {
+                $updated = $s;
+            }
+        }
+        sm_reply(['ok' => true, 'shape' => $updated]);
         // no break
 }
 

@@ -151,6 +151,9 @@ class Shape
                 // desvincular
                 $upd['itemtype'] = '';
                 $upd['items_id'] = 0;
+            } elseif ((string) $shape['shapetype'] === 'vago') {
+                // Bloco 4f: vago não vincula ativo — converta antes
+                return false;
             } elseif (in_array($itemtype, self::LINKABLE, true)) {
                 $upd['itemtype'] = $itemtype;
                 $upd['items_id'] = $itemsId;
@@ -171,6 +174,89 @@ class Shape
         }
 
         return (bool) $DB->update('glpi_plugin_shopmap_shapes', $upd, ['id' => $id]);
+    }
+
+    /**
+     * Converte o shape em "Vago" (Bloco 4f — decisão do usuário):
+     * o equipamento saiu, a fibra FICA lançada aguardando o próximo.
+     *  - preserva posição, rótulo e TODOS os traçados de cabo;
+     *  - cabos registrados em portas (4c) têm o registro desfeito
+     *    (a porta era do equipamento que saiu; portas ficam no ativo);
+     *  - limpa o item efetivo (4e) do lado deste shape em cada cabo;
+     *  - desvincula o ativo e desmarca destino de rota (vago não é DC).
+     */
+    public static function makeVago(int $id): bool
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $shape = self::get($id);
+        if ($shape === null) {
+            return false;
+        }
+        if ((string) $shape['shapetype'] === 'vago') {
+            return true; // idempotente
+        }
+
+        $it = $DB->request([
+            'FROM'  => 'glpi_plugin_shopmap_connections',
+            'WHERE' => ['OR' => [
+                'glpi_plugin_shopmap_connections.shapes_id_a' => $id,
+                'glpi_plugin_shopmap_connections.shapes_id_b' => $id,
+            ]],
+        ]);
+        foreach ($it as $row) {
+            $conn = Connection::get((int) $row['id']);
+            if ($conn === null) {
+                continue;
+            }
+            // registro em portas: desfaz (o vínculo liga as DUAS portas;
+            // com um lado sem equipamento, ele não representa mais nada)
+            if ((int) ($conn['networkports_id_a'] ?? 0) > 0
+                && (int) ($conn['networkports_id_b'] ?? 0) > 0
+            ) {
+                PortLink::unlink($conn);
+            }
+            // item efetivo (4e) do lado deste shape: limpa
+            $side = ((int) $conn['shapes_id_a'] === $id) ? 'a' : 'b';
+            if ((string) ($conn['itemtype_' . $side] ?? '') !== '') {
+                Connection::update((int) $conn['id'], [
+                    'itemtype_' . $side => '',
+                    'items_id_' . $side => 0,
+                ]);
+            }
+        }
+
+        return (bool) $DB->update('glpi_plugin_shopmap_shapes', [
+            'shapetype'       => 'vago',
+            'itemtype'        => '',
+            'items_id'        => 0,
+            'is_route_target' => 0,
+            'date_mod'        => date('Y-m-d H:i:s'),
+        ], ['id' => $id]);
+    }
+
+    /**
+     * Caminho de volta do vago (Bloco 4f): quando o equipamento novo
+     * chega, o ponto vira equipment/rack/passbox de novo e o ativo é
+     * vinculado normalmente. Só converte A PARTIR de vago.
+     */
+    public static function setType(int $id, string $type): bool
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $shape = self::get($id);
+        if ($shape === null
+            || (string) $shape['shapetype'] !== 'vago'
+            || !in_array($type, ['equipment', 'rack', 'passbox'], true)
+        ) {
+            return false;
+        }
+        return (bool) $DB->update('glpi_plugin_shopmap_shapes', [
+            'shapetype' => $type,
+            'date_mod'  => date('Y-m-d H:i:s'),
+        ], ['id' => $id]);
     }
 
     /**

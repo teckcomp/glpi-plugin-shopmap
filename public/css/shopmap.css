@@ -42,6 +42,10 @@
 .sm-shape-rack .sm-shape-glyph { color: #b8860b; }
 .sm-shape-passbox .sm-shape-glyph { color: #666; }
 .sm-shape-star { color: #b8860b; font-size: 12px; text-shadow: 0 0 3px #fff; }
+/* Bloco 4f — ponto vago (fibra aguardando equipamento) */
+.sm-shape-vago .sm-shape-glyph { color: #8a8a8a; }
+.sm-shape-vago .sm-shape-label { color: #8a8a8a; font-style: italic; }
+.sm-pop-vago-hint { color: #8a8a8a; margin: 6px 0; }
 .sm-shape-label {
     font-size: 11px; background: rgba(255,255,255,.85);
     padding: 0 3px; border-radius: 3px; color: #222;
