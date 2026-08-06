@@ -122,18 +122,25 @@ class PortLink
         $sides  = [];
         $can    = true;
         $reason = '';
-        foreach (['a' => (int) $conn['shapes_id_a'], 'b' => (int) $conn['shapes_id_b']] as $side => $shapeId) {
-            $shape    = Shape::get($shapeId);
-            $itemtype = (string) ($shape['itemtype'] ?? '');
-            $itemsId  = (int) ($shape['items_id'] ?? 0);
-            [$assetName] = Shape::assetInfo($itemtype, $itemsId);
+        foreach (['a', 'b'] as $side) {
+            $shapeId = (int) $conn['shapes_id_' . $side];
+            $shape   = Shape::get($shapeId);
+            // Bloco 4e: a ponta lógica é o item EFETIVO (equipamento
+            // dentro do rack quando escolhido; senão o ativo do shape)
+            [$itemtype, $itemsId] = EndPoint::effective($conn, $side);
+            $assetName = EndPoint::itemName($itemtype, $itemsId);
 
             $ok = $shape !== null && $assetName !== '' && self::supportsPorts($itemtype);
             if (!$ok && $reason === '') {
                 $label = $shape !== null ? (string) $shape['label'] : ('#' . $shapeId);
-                $reason = ($assetName === '')
-                    ? 'O shape "' . ($label !== '' ? $label : '#' . $shapeId) . '" não tem ativo vinculado.'
-                    : 'O ativo "' . $assetName . '" (' . $itemtype . ') não aceita portas de rede.';
+                if ($assetName === '') {
+                    $reason = 'O shape "' . ($label !== '' ? $label : '#' . $shapeId) . '" não tem ativo vinculado.';
+                } elseif (EndPoint::isContainer($itemtype)) {
+                    $reason = '"' . $assetName . '" é um ' . strtolower(EndPoint::typeLabel($itemtype))
+                        . ' — escolha o equipamento interno (campo "Equipamento no rack" acima) antes de registrar portas.';
+                } else {
+                    $reason = 'O ativo "' . $assetName . '" (' . $itemtype . ') não aceita portas de rede.';
+                }
             }
             $can = $can && $ok;
 
@@ -156,15 +163,12 @@ class PortLink
     /**
      * Resolve a porta de um lado: valida a existente OU cria uma nova.
      * Devolve [id, ''] em sucesso ou [0, mensagem de erro].
+     * Bloco 4e: recebe o item EFETIVO da ponta (não mais o shape).
      *
-     * @param array<string,mixed> $shape linha crua do shape do lado
      * @return array{0:int,1:string}
      */
-    public static function resolvePort(array $shape, int $portsId, string $newName): array
+    public static function resolvePort(string $itemtype, int $itemsId, int $portsId, string $newName): array
     {
-        $itemtype = (string) ($shape['itemtype'] ?? '');
-        $itemsId  = (int) ($shape['items_id'] ?? 0);
-
         if ($itemsId <= 0 || !self::supportsPorts($itemtype)) {
             return [0, 'lado sem ativo com suporte a portas'];
         }
@@ -257,17 +261,19 @@ class PortLink
             return ['ok' => false, 'error' => 'este cabo já está registrado em portas'];
         }
 
-        $shapeA = Shape::get((int) $conn['shapes_id_a']);
-        $shapeB = Shape::get((int) $conn['shapes_id_b']);
-        if ($shapeA === null || $shapeB === null) {
+        if (Shape::get((int) $conn['shapes_id_a']) === null || Shape::get((int) $conn['shapes_id_b']) === null) {
             return ['ok' => false, 'error' => 'shapes do cabo não encontrados'];
         }
 
-        [$idA, $errA] = self::resolvePort($shapeA, $portA, $newA);
+        // Bloco 4e: as portas são do item EFETIVO de cada ponta
+        [$itA, $iidA] = EndPoint::effective($conn, 'a');
+        [$itB, $iidB] = EndPoint::effective($conn, 'b');
+
+        [$idA, $errA] = self::resolvePort($itA, $iidA, $portA, $newA);
         if ($idA <= 0) {
             return ['ok' => false, 'error' => 'lado A: ' . $errA];
         }
-        [$idB, $errB] = self::resolvePort($shapeB, $portB, $newB);
+        [$idB, $errB] = self::resolvePort($itB, $iidB, $portB, $newB);
         if ($idB <= 0) {
             return ['ok' => false, 'error' => 'lado B: ' . $errB];
         }

@@ -194,7 +194,34 @@
                '<button type="button" class="sm-pop-btn sm-cpop-pgo">Confirmar registro</button>';
     }
 
-    function connPopupHtml(conn, names, canUpdate) {
+    /** Um lado do formulário de equipamento no rack (Bloco 4e). */
+    function endSideHtml(side, key) {
+        var cur = side.current || {};
+        var h = '<div class="sm-cpop-eside">' +
+            '<label class="sm-pop-lbl">Equipamento no rack \u2014 lado ' + key.toUpperCase() +
+            ' (' + esc(side.container || '?') + ')</label>' +
+            '<select class="sm-cpop-esel" data-side="' + key + '">' +
+            '<option value="">(o pr\u00f3prio ' + esc(side.container || 'rack') + ')</option>';
+        (side.items || []).forEach(function (it) {
+            var v = it.itemtype + ':' + it.items_id;
+            var sel = (cur.itemtype === it.itemtype && cur.items_id === it.items_id) ? ' selected' : '';
+            h += '<option value="' + esc(v) + '"' + sel + '>' +
+                 esc(it.name) + ' (' + esc(it.type_label) + ')</option>';
+        });
+        return h + '</select></div>';
+    }
+
+    /** Formulário das pontas (endinfo -> HTML). Puro p/ teste. */
+    function endsFormHtml(ends) {
+        var h = '';
+        ['a', 'b'].forEach(function (key) {
+            var side = ends && ends[key];
+            if (side && side.is_container) { h += endSideHtml(side, key); }
+        });
+        return h;
+    }
+
+    function connPopupHtml(conn, names, canUpdate, ends) {
         var meta = cableMeta(conn.cable_type);
         var h = '<div class="sm-cpop" data-conn-id="' + conn.id + '">';
         h += '<div class="sm-pop-type"><i class="ti ti-route"></i> ' +
@@ -227,6 +254,12 @@
              '<span><label class="sm-pop-lbl">Fibras/pares</label>' +
              '<input type="text" class="sm-cpop-strands" value="' + (conn.strand_count > 0 ? conn.strand_count : '') + '"></span>' +
              '</div>';
+
+        // Bloco 4e: equipamento dentro do rack (carregado sob demanda)
+        if (ends && (ends.a || ends.b)) {
+            h += '<div class="sm-cpop-ends"><span class="sm-cpop-eload">' +
+                 'carregando equipamentos do rack\u2026</span></div>';
+        }
 
         // Bloco 4c: registro opcional em NetworkPort do core
         h += '<div class="sm-cpop-ports">';
@@ -426,13 +459,9 @@
             if (ev && ev.originalEvent) { ev.originalEvent.stopPropagation(); }
             if (self.mode) { return; } // desenhando: ignora cliques no cabo
             var c = self.conns[conn.id];
-            var names = {
-                a: self.shapeName(c.shapes_id_a),
-                b: self.shapeName(c.shapes_id_b)
-            };
             L.popup({ minWidth: 240 })
                 .setLatLng(ev.latlng)
-                .setContent(connPopupHtml(c, names, self.cfg.canUpdate))
+                .setContent(connPopupHtml(c, self.connNames(c), self.cfg.canUpdate, self.connEnds(c)))
                 .openOn(self.map);
         });
         this.lines[conn.id] = line;
@@ -550,8 +579,9 @@
             var c = self.conns[cid];
             if (c.shapes_id_a !== shapeId && c.shapes_id_b !== shapeId) { return; }
             var otherId = (c.shapes_id_a === shapeId) ? c.shapes_id_b : c.shapes_id_a;
+            var otherEff = (c.shapes_id_a === shapeId) ? c.eff_name_b : c.eff_name_a;
             out.push({
-                other: self.shapeName(otherId),
+                other: self.shapeName(otherId) + (otherEff ? ' \u203a ' + otherEff : ''),
                 typeLabel: cableMeta(c.cable_type).label,
                 color: cableMeta(c.cable_type).color,
                 label: c.cable_label,
@@ -564,6 +594,25 @@
     App.prototype.shapeName = function (id) {
         var s = this.shapes[id];
         return s ? (s.label || s.asset_name || ('#' + id)) : ('#' + id);
+    };
+
+    /** Nomes das pontas com o item efetivo do 4e ("Rack \u203a SW"). */
+    App.prototype.connNames = function (c) {
+        var a = this.shapeName(c.shapes_id_a);
+        var b = this.shapeName(c.shapes_id_b);
+        if (c.eff_name_a) { a += ' \u203a ' + c.eff_name_a; }
+        if (c.eff_name_b) { b += ' \u203a ' + c.eff_name_b; }
+        return { a: a, b: b };
+    };
+
+    /** Lados cujo shape é contêiner (Rack/Enclosure com ativo). */
+    App.prototype.connEnds = function (c) {
+        var self = this;
+        var isCont = function (sid) {
+            var s = self.shapes[sid];
+            return !!(s && (s.itemtype === 'Rack' || s.itemtype === 'Enclosure') && s.items_id > 0);
+        };
+        return { a: isCont(c.shapes_id_a), b: isCont(c.shapes_id_b) };
     };
 
     App.prototype.setHint = function (text) {
@@ -656,10 +705,7 @@
                 var mid = self.connLatLngs(c)[Math.floor(self.connLatLngs(c).length / 2)];
                 L.popup({ minWidth: 240 })
                     .setLatLng(mid)
-                    .setContent(connPopupHtml(c, {
-                        a: self.shapeName(c.shapes_id_a),
-                        b: self.shapeName(c.shapes_id_b)
-                    }, true))
+                    .setContent(connPopupHtml(c, self.connNames(c), true, self.connEnds(c)))
                     .openOn(self.map);
             }
         });
@@ -877,17 +923,40 @@
         var id = parseInt(box.getAttribute('data-conn-id'), 10);
         var q = function (sel) { return box.querySelector(sel); };
 
+        // ---- Bloco 4e: equipamento dentro do rack ----
+        var endsBox = q('.sm-cpop-ends');
+        if (endsBox) {
+            self.postConn({ action: 'endinfo', id: id }, function (data) {
+                if (!data.ok || !data.ends) {
+                    endsBox.innerHTML = '<div class="sm-cpop-pmsg">' +
+                        esc(data.error || 'falha ao listar o conte\u00fado do rack') + '</div>';
+                    return;
+                }
+                var h = endsFormHtml(data.ends);
+                endsBox.innerHTML = h !== '' ? h :
+                    '<div class="sm-cpop-pmsg">rack sem equipamentos documentados (Item_Rack)</div>';
+            });
+        }
+
         var save = q('.sm-cpop-save');
         if (save) {
             save.addEventListener('click', function () {
-                self.postConn({
+                var params = {
                     action: 'update',
                     id: id,
                     cable_type: q('.sm-cpop-type').value,
                     cable_label: q('.sm-cpop-label').value,
                     length_m: q('.sm-cpop-length').value || 0,
                     strand_count: q('.sm-cpop-strands').value || 0
-                }, function (data) {
+                };
+                // Bloco 4e: pontas escolhidas (apenas selects renderizados)
+                box.querySelectorAll('.sm-cpop-esel').forEach(function (sel) {
+                    var side = sel.getAttribute('data-side');
+                    var parts = (sel.value || '').split(':');
+                    params['itemtype_' + side] = parts.length === 2 ? parts[0] : '';
+                    params['items_id_' + side] = parts.length === 2 ? (parseInt(parts[1], 10) || 0) : 0;
+                });
+                self.postConn(params, function (data) {
                     if (data.ok && data.connection) { self.refreshLine(data.connection); }
                     self.map.closePopup();
                 });
@@ -993,6 +1062,7 @@
         _cableVisible: cableVisible,
         _connLinked: connLinked,
         _portFormHtml: portFormHtml,
+        _endsFormHtml: endsFormHtml,
         _connPopupHtml: connPopupHtml,
         _iconClass: iconClass,
         _iconHtml: iconHtml,

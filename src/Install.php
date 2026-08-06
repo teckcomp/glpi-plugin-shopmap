@@ -196,6 +196,47 @@ class Install
         // ------------------------------------------------------------------
         $migration->addRight('plugin_shopmap', READ | UPDATE | CREATE | DELETE, ['config' => UPDATE]);
 
+        // ------------------------------------------------------------------
+        // Migração Bloco 4e — ALTER consolidado de 4e+4f+4g (decisão
+        // 01/08/2026: um dump, uma reinstalação, três blocos de código).
+        //
+        //  - itemtype_a/items_id_a e itemtype_b/items_id_b (4e): o item
+        //    EFETIVO da ponta quando o shape é um contêiner (Rack/
+        //    Enclosure) — ex.: o cabo chega no rack, mas conecta no SW
+        //    que está dentro dele. Vazio = a ponta é o próprio ativo do
+        //    shape (comportamento até o 4d).
+        //  - porttype_a/b (4g): origem da porta referenciada por lado
+        //    ('' = NetworkPort core; 'dgoplus' = porta do DGO+, apenas
+        //    REFERÊNCIA — documentação real de emenda fica no DGO+).
+        //
+        //  O 4f (shape "vago") não precisa de coluna: é valor novo em
+        //  `shapetype` (SHAPE_TYPES), entra com o código do 4f.
+        //  addField é idempotente (checa fieldExists) — seguro no --force.
+        // ------------------------------------------------------------------
+        $connTable = 'glpi_plugin_shopmap_connections';
+        $migration->addField($connTable, 'itemtype_a', "VARCHAR(100) NOT NULL DEFAULT ''", [
+            'after'   => 'shapes_id_b',
+            'comment' => 'item efetivo da ponta A (equipamento dentro do rack)',
+        ]);
+        $migration->addField($connTable, 'items_id_a', "INT NOT NULL DEFAULT 0", [
+            'after' => 'itemtype_a',
+        ]);
+        $migration->addField($connTable, 'itemtype_b', "VARCHAR(100) NOT NULL DEFAULT ''", [
+            'after'   => 'items_id_a',
+            'comment' => 'item efetivo da ponta B',
+        ]);
+        $migration->addField($connTable, 'items_id_b', "INT NOT NULL DEFAULT 0", [
+            'after' => 'itemtype_b',
+        ]);
+        $migration->addField($connTable, 'porttype_a', "VARCHAR(20) NOT NULL DEFAULT ''", [
+            'after'   => 'networkports_id_b',
+            'comment' => 'origem da porta A: vazio=core, dgoplus=referencia DGO+',
+        ]);
+        $migration->addField($connTable, 'porttype_b', "VARCHAR(20) NOT NULL DEFAULT ''", [
+            'after' => 'porttype_a',
+        ]);
+        $migration->migrationOneTable($connTable);
+
         $migration->executeMigration();
 
         return true;

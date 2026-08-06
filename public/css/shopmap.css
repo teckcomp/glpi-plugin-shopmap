@@ -77,6 +77,11 @@
 .sm-cpop-row { display: flex; gap: 8px; }
 .sm-cpop-row > span { flex: 1; }
 
+/* Bloco 4e — equipamento dentro do rack */
+.sm-cpop-ends { border-top: 1px solid #e3e3e3; margin-top: 8px; padding-top: 6px; }
+.sm-cpop-eside { margin-bottom: 4px; }
+.sm-cpop-eload { color: #888; font-style: italic; }
+
 /* Bloco 4c — registro em NetworkPort */
 .sm-cpop-ports { border-top: 1px solid #e3e3e3; margin-top: 8px; padding-top: 6px; }
 .sm-cpop-plinked { color: #1a7f4e; margin-bottom: 4px; }

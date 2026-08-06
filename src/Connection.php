@@ -61,6 +61,13 @@ class Connection
                 // Bloco 4c: o front usa só a flag "registrado ou não"
                 'networkports_id_a' => (int) ($row['networkports_id_a'] ?? 0),
                 'networkports_id_b' => (int) ($row['networkports_id_b'] ?? 0),
+                // Bloco 4e: item efetivo da ponta (equipamento dentro do rack)
+                'itemtype_a'  => (string) ($row['itemtype_a'] ?? ''),
+                'items_id_a'  => (int) ($row['items_id_a'] ?? 0),
+                'itemtype_b'  => (string) ($row['itemtype_b'] ?? ''),
+                'items_id_b'  => (int) ($row['items_id_b'] ?? 0),
+                'eff_name_a'  => EndPoint::itemName((string) ($row['itemtype_a'] ?? ''), (int) ($row['items_id_a'] ?? 0)),
+                'eff_name_b'  => EndPoint::itemName((string) ($row['itemtype_b'] ?? ''), (int) ($row['items_id_b'] ?? 0)),
             ];
         }
         return $rows;
@@ -190,6 +197,18 @@ class Connection
         }
         if (array_key_exists('points', $fields)) {
             $upd['path'] = json_encode(['points' => $fields['points']]);
+        }
+
+        // Bloco 4e: item efetivo por lado (validação em EndPoint, no AJAX)
+        foreach (['a', 'b'] as $side) {
+            if (array_key_exists('itemtype_' . $side, $fields)
+                && array_key_exists('items_id_' . $side, $fields)
+            ) {
+                $it  = (string) $fields['itemtype_' . $side];
+                $iid = (int) $fields['items_id_' . $side];
+                $upd['itemtype_' . $side] = ($it !== '' && $iid > 0) ? $it : '';
+                $upd['items_id_' . $side] = ($it !== '' && $iid > 0) ? $iid : 0;
+            }
         }
 
         return (bool) $DB->update('glpi_plugin_shopmap_connections', $upd, ['id' => $id]);

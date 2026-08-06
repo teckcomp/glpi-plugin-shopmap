@@ -8,6 +8,12 @@
  *                     [strand_count], [comment], [points])
  * POST action=delete (id)
  *
+ * Bloco 4e — item efetivo da ponta (equipamento dentro do rack):
+ * POST action=endinfo (id) → lados A/B: contêiner? conteúdo? escolhido?
+ * action=update aceita itemtype_a/items_id_a e itemtype_b/items_id_b
+ * (validados contra o conteúdo do rack; recusado se o cabo já estiver
+ * registrado em portas — desfaça o registro antes de trocar a ponta).
+ *
  * Bloco 4c — registro opcional em NetworkPort do core:
  * POST action=portinfo   (id) → lados A/B com portas livres/ocupadas
  * POST action=portlink   (id, ports_id_a|new_name_a, ports_id_b|new_name_b)
@@ -19,6 +25,7 @@
  */
 
 use GlpiPlugin\Shopmap\Connection;
+use GlpiPlugin\Shopmap\EndPoint;
 use GlpiPlugin\Shopmap\Floorplan;
 use GlpiPlugin\Shopmap\PortLink;
 
@@ -103,6 +110,30 @@ switch ($action) {
             }
             $fields['points'] = $points;
         }
+        // Bloco 4e: item efetivo por lado
+        foreach (['a', 'b'] as $side) {
+            if (!isset($_POST['itemtype_' . $side], $_POST['items_id_' . $side])) {
+                continue;
+            }
+            $effIt  = (string) $_POST['itemtype_' . $side];
+            $effIid = (int) $_POST['items_id_' . $side];
+            $curIt  = (string) ($conn['itemtype_' . $side] ?? '');
+            $curIid = (int) ($conn['items_id_' . $side] ?? 0);
+            if ($effIt === $curIt && $effIid === $curIid) {
+                continue; // sem mudança
+            }
+            if ((int) ($conn['networkports_id_a'] ?? 0) > 0
+                && (int) ($conn['networkports_id_b'] ?? 0) > 0
+            ) {
+                smc_reply(['ok' => false, 'error' => 'este cabo está registrado em portas — desfaça o registro antes de trocar o equipamento da ponta'], 400);
+            }
+            $shape = \GlpiPlugin\Shopmap\Shape::get((int) $conn['shapes_id_' . $side]);
+            if (!EndPoint::validateEffective($shape, $effIt, $effIid)) {
+                smc_reply(['ok' => false, 'error' => 'lado ' . strtoupper($side) . ': o equipamento escolhido não está dentro deste rack'], 400);
+            }
+            $fields['itemtype_' . $side] = $effIt;
+            $fields['items_id_' . $side] = $effIid;
+        }
         $ok = Connection::update((int) $conn['id'], $fields);
         smc_reply([
             'ok'         => $ok,
@@ -113,6 +144,11 @@ switch ($action) {
     case 'delete':
         $conn = smc_conn_checked((int) ($_POST['id'] ?? 0));
         smc_reply(['ok' => Connection::delete((int) $conn['id'])]);
+        // sem break
+
+    case 'endinfo':
+        $conn = smc_conn_checked((int) ($_POST['id'] ?? 0));
+        smc_reply(['ok' => true, 'ends' => EndPoint::info($conn)]);
         // sem break
 
     case 'portinfo':
