@@ -107,6 +107,12 @@ switch ($action) {
             // 4i r2: faltava repassar (validação na Connection::update)
             $fields['color'] = (string) $_POST['color'];
         }
+        if (isset($_POST['power_ref_dbm'])) {
+            // 4j: dBm com vírgula pt-BR; vazio = limpar (NULL)
+            $raw = trim((string) $_POST['power_ref_dbm']);
+            $fields['power_ref_dbm'] = ($raw === '') ? null
+                : (float) str_replace(',', '.', $raw);
+        }
         if (isset($_POST['points'])) {
             $points = Connection::sanitizePoints($_POST['points']);
             if ($points === null) {

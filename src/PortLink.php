@@ -27,6 +27,100 @@ class PortLink
     /** Instanciação padrão das portas criadas pelo plugin. */
     public const INSTANTIATION = 'NetworkPortEthernet';
 
+    /** Origem da porta por lado (Bloco 4g): '' = NetworkPort core. */
+    public const PT_CORE = '';
+    public const PT_DGO  = 'dgoplus';
+
+    /**
+     * Tipo do lado (Bloco 4g): 'core' (NetworkPort), 'dgoplus' (porta do
+     * DGO+ como REFERÊNCIA — a documentação real de emenda/fusão é no
+     * DGO+) ou 'none'.
+     */
+    public static function sideKind(string $itemtype): string
+    {
+        if ($itemtype === 'PassiveDCEquipment') {
+            if (class_exists('Plugin') && (new \Plugin())->isActivated('dgoplus')) {
+                /** @var \DBmysql $DB */
+                global $DB;
+                if ($DB->tableExists('glpi_plugin_dgoplus_ports')) {
+                    return 'dgoplus';
+                }
+            }
+            return 'none';
+        }
+        return self::supportsPorts($itemtype) ? 'core' : 'none';
+    }
+
+    /**
+     * Ids de porta já referenciados por OUTROS cabos do ShopMap, por
+     * origem (4g): um cabo em par core+DGO não cria wire no core, então
+     * o wireOf sozinho não basta para saber que a porta está em uso.
+     *
+     * @return array<int,bool> id => true
+     */
+    public static function usedByShopmap(string $porttype, int $exceptConnId): array
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $used = [];
+        $it = $DB->request([
+            'FROM'  => 'glpi_plugin_shopmap_connections',
+        ]);
+        foreach ($it as $row) {
+            if ((int) $row['id'] === $exceptConnId) {
+                continue;
+            }
+            foreach (['a', 'b'] as $side) {
+                $pid = (int) ($row['networkports_id_' . $side] ?? 0);
+                if ($pid > 0 && (string) ($row['porttype_' . $side] ?? '') === $porttype) {
+                    $used[$pid] = true;
+                }
+            }
+        }
+        return $used;
+    }
+
+    /**
+     * Portas do DGO+ de uma DGO (Bloco 4g), como referência:
+     * "Tubo X · Fibra Y" (+ code/name quando documentados).
+     * busy = já referenciada por outro cabo do ShopMap.
+     *
+     * @return array<int, array{id:int,name:string,number:int,busy:bool}>
+     */
+    public static function dgoPortsOf(int $dgoId, int $exceptConnId = 0): array
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $used = self::usedByShopmap(self::PT_DGO, $exceptConnId);
+        $out  = [];
+        $it = $DB->request([
+            'FROM'  => 'glpi_plugin_dgoplus_ports',
+            'WHERE' => [
+                'glpi_plugin_dgoplus_ports.itemtype'   => 'PassiveDCEquipment',
+                'glpi_plugin_dgoplus_ports.items_id'   => $dgoId,
+                'glpi_plugin_dgoplus_ports.is_deleted' => 0,
+            ],
+            'ORDER' => ['glpi_plugin_dgoplus_ports.tube_num', 'glpi_plugin_dgoplus_ports.fiber_num'],
+        ]);
+        foreach ($it as $row) {
+            $pid  = (int) $row['id'];
+            $name = 'Tubo ' . (int) ($row['tube_num'] ?? 0) . ' - Fibra ' . (int) ($row['fiber_num'] ?? 0);
+            $extra = trim((string) ($row['code'] ?? '') . ' ' . (string) ($row['name'] ?? ''));
+            if ($extra !== '') {
+                $name .= ' (' . $extra . ')';
+            }
+            $out[] = [
+                'id'     => $pid,
+                'name'   => $name,
+                'number' => (int) ($row['fiber_num'] ?? 0),
+                'busy'   => isset($used[$pid]),
+            ];
+        }
+        return $out;
+    }
+
     /**
      * O itemtype aceita NetworkPort? (lista do core, com fallback)
      */
@@ -49,11 +143,12 @@ class PortLink
      *
      * @return array<int, array{id:int,name:string,number:int,busy:bool}>
      */
-    public static function portsOf(string $itemtype, int $itemsId): array
+    public static function portsOf(string $itemtype, int $itemsId, int $exceptConnId = 0): array
     {
         /** @var \DBmysql $DB */
         global $DB;
 
+        $refUsed = self::usedByShopmap(self::PT_CORE, $exceptConnId); // 4g
         $out = [];
         $it = $DB->request([
             'FROM'  => 'glpi_networkports',
@@ -70,7 +165,7 @@ class PortLink
                 'id'     => $pid,
                 'name'   => (string) ($row['name'] ?? ''),
                 'number' => (int) ($row['logical_number'] ?? 0),
-                'busy'   => self::wireOf($pid) !== null,
+                'busy'   => self::wireOf($pid) !== null || isset($refUsed[$pid]),
             ];
         }
         return $out;
@@ -130,7 +225,8 @@ class PortLink
             [$itemtype, $itemsId] = EndPoint::effective($conn, $side);
             $assetName = EndPoint::itemName($itemtype, $itemsId);
 
-            $ok = $shape !== null && $assetName !== '' && self::supportsPorts($itemtype);
+            $kind = self::sideKind($itemtype); // 4g: core | dgoplus | none
+            $ok = $shape !== null && $assetName !== '' && $kind !== 'none';
             if (!$ok && $reason === '') {
                 $label = $shape !== null ? (string) $shape['label'] : ('#' . $shapeId);
                 if ($assetName === '') {
@@ -138,16 +234,30 @@ class PortLink
                 } elseif (EndPoint::isContainer($itemtype)) {
                     $reason = '"' . $assetName . '" é um ' . strtolower(EndPoint::typeLabel($itemtype))
                         . ' — escolha o equipamento interno (campo "Equipamento no rack" acima) antes de registrar portas.';
+                } elseif ($itemtype === 'PassiveDCEquipment') {
+                    $reason = 'A DGO "' . $assetName . '" precisa do plugin DGO+ ativo para referenciar portas.';
                 } else {
                     $reason = 'O ativo "' . $assetName . '" (' . $itemtype . ') não aceita portas de rede.';
                 }
             }
             $can = $can && $ok;
 
+            $ports = [];
+            if ($ok) {
+                $ports = ($kind === 'dgoplus')
+                    ? self::dgoPortsOf($itemsId, (int) ($conn['id'] ?? 0))
+                    : self::portsOf($itemtype, $itemsId);
+            }
+            if ($ok && $kind === 'dgoplus' && $ports === [] && $reason === '') {
+                $can = false;
+                $reason = 'A DGO "' . $assetName . '" ainda não tem portas documentadas — documente no DGO+ ("Mapa de portas") e volte aqui.';
+            }
+
             $sides[$side] = [
+                'kind'  => $kind,
                 'shape' => $shape !== null ? (string) $shape['label'] : '',
                 'asset' => $assetName,
-                'ports' => $ok ? self::portsOf($itemtype, $itemsId) : [],
+                'ports' => $ports,
             ];
         }
 
@@ -167,6 +277,28 @@ class PortLink
      *
      * @return array{0:int,1:string}
      */
+    /**
+     * Resolve a REFERÊNCIA de porta do DGO+ (Bloco 4g): a porta tem que
+     * existir naquela DGO e não estar usada por outro cabo. Não há
+     * criação — portas do DGO+ nascem no DGO+.
+     *
+     * @return array{0:int,1:string}
+     */
+    public static function resolveDgoPort(int $dgoId, int $portsId, int $exceptConnId): array
+    {
+        if ($portsId <= 0) {
+            return [0, 'escolha a porta do DGO+ (referência)'];
+        }
+        foreach (self::dgoPortsOf($dgoId, $exceptConnId) as $p) {
+            if ($p['id'] === $portsId) {
+                return $p['busy']
+                    ? [0, 'a porta "' . $p['name'] . '" já está referenciada por outro cabo']
+                    : [$portsId, ''];
+            }
+        }
+        return [0, 'porta não pertence a esta DGO'];
+    }
+
     public static function resolvePort(string $itemtype, int $itemsId, int $portsId, string $newName): array
     {
         if ($itemsId <= 0 || !self::supportsPorts($itemtype)) {
@@ -268,29 +400,45 @@ class PortLink
         // Bloco 4e: as portas são do item EFETIVO de cada ponta
         [$itA, $iidA] = EndPoint::effective($conn, 'a');
         [$itB, $iidB] = EndPoint::effective($conn, 'b');
+        $connId = (int) $conn['id'];
 
-        [$idA, $errA] = self::resolvePort($itA, $iidA, $portA, $newA);
+        // Bloco 4g: cada lado resolve pelo seu tipo (core cria/valida
+        // NetworkPort; DGO só REFERENCIA porta existente do DGO+)
+        $kindA = self::sideKind($itA);
+        $kindB = self::sideKind($itB);
+
+        [$idA, $errA] = ($kindA === 'dgoplus')
+            ? self::resolveDgoPort($iidA, $portA, $connId)
+            : self::resolvePort($itA, $iidA, $portA, $newA);
         if ($idA <= 0) {
             return ['ok' => false, 'error' => 'lado A: ' . $errA];
         }
-        [$idB, $errB] = self::resolvePort($itB, $iidB, $portB, $newB);
+        [$idB, $errB] = ($kindB === 'dgoplus')
+            ? self::resolveDgoPort($iidB, $portB, $connId)
+            : self::resolvePort($itB, $iidB, $portB, $newB);
         if ($idB <= 0) {
             return ['ok' => false, 'error' => 'lado B: ' . $errB];
         }
-        if ($idA === $idB) {
+        if ($kindA === $kindB && $idA === $idB) {
             return ['ok' => false, 'error' => 'as duas pontas não podem ser a mesma porta'];
         }
 
-        $wire   = new \NetworkPort_NetworkPort();
-        $wireId = $wire->add([
-            'networkports_id_1' => $idA,
-            'networkports_id_2' => $idB,
-        ]);
-        if (!is_int($wireId) || $wireId <= 0) {
-            return ['ok' => false, 'error' => 'falha ao conectar as portas no GLPI'];
+        // Wire NetworkPort_NetworkPort só existe no mundo core — par com
+        // DGO fica documentado na conexão (referência), sem wire.
+        if ($kindA === 'core' && $kindB === 'core') {
+            $wire   = new \NetworkPort_NetworkPort();
+            $wireId = $wire->add([
+                'networkports_id_1' => $idA,
+                'networkports_id_2' => $idB,
+            ]);
+            if (!is_int($wireId) || $wireId <= 0) {
+                return ['ok' => false, 'error' => 'falha ao conectar as portas no GLPI'];
+            }
         }
 
-        if (!Connection::setPorts((int) $conn['id'], $idA, $idB)) {
+        $ptA = ($kindA === 'dgoplus') ? self::PT_DGO : self::PT_CORE;
+        $ptB = ($kindB === 'dgoplus') ? self::PT_DGO : self::PT_CORE;
+        if (!Connection::setPorts($connId, $idA, $idB, $ptA, $ptB)) {
             return ['ok' => false, 'error' => 'falha ao gravar o vínculo na conexão'];
         }
         return ['ok' => true, 'error' => ''];
@@ -308,12 +456,16 @@ class PortLink
         global $DB;
 
         $portA = (int) ($conn['networkports_id_a'] ?? 0);
-        if ($portA > 0) {
+        // 4g: wire só existe quando o par é core+core (porttypes vazios)
+        if ($portA > 0
+            && (string) ($conn['porttype_a'] ?? '') === self::PT_CORE
+            && (string) ($conn['porttype_b'] ?? '') === self::PT_CORE
+        ) {
             $wire = self::wireOf($portA);
             if ($wire !== null) {
                 $DB->delete('glpi_networkports_networkports', ['id' => (int) $wire['id']]);
             }
         }
-        return Connection::setPorts((int) $conn['id'], 0, 0);
+        return Connection::setPorts((int) $conn['id'], 0, 0, self::PT_CORE, self::PT_CORE);
     }
 }

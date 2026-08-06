@@ -58,6 +58,10 @@ class Connection
                 'length_m'     => (float) ($row['length_m'] ?? 0),
                 'strand_count' => (int) ($row['strand_count'] ?? 0),
                 'color'        => (string) ($row['color'] ?? ''),
+                // Bloco 4j: potência (inicial editável; atual = monitoramento)
+                'power_ref_dbm'  => isset($row['power_ref_dbm']) && $row['power_ref_dbm'] !== null && $row['power_ref_dbm'] !== '' ? (float) $row['power_ref_dbm'] : null,
+                'power_now_dbm'  => isset($row['power_now_dbm']) && $row['power_now_dbm'] !== null && $row['power_now_dbm'] !== '' ? (float) $row['power_now_dbm'] : null,
+                'power_now_date' => (string) ($row['power_now_date'] ?? ''),
                 'comment'      => (string) ($row['comment'] ?? ''),
                 // Bloco 4c: o front usa só a flag "registrado ou não"
                 'networkports_id_a' => (int) ($row['networkports_id_a'] ?? 0),
@@ -200,6 +204,13 @@ class Connection
             $upd['path'] = json_encode(['points' => $fields['points']]);
         }
 
+        // Bloco 4j: potência INICIAL da fibra (dBm, "as built") — editável;
+        // null quando não medida. Aceita vírgula pt-BR (tratada no AJAX).
+        if (array_key_exists('power_ref_dbm', $fields)) {
+            $v = $fields['power_ref_dbm'];
+            $upd['power_ref_dbm'] = ($v === null || $v === '') ? null : (float) $v;
+        }
+
         // Bloco 4i: cor do cabo — '' (cru/verde) ou uma da paleta
         if (array_key_exists('color', $fields)) {
             $color = (string) $fields['color'];
@@ -224,10 +235,26 @@ class Connection
     }
 
     /**
+     * Grava a potência ATUAL (Bloco 4j) — chamada pelo monitoramento
+     * (Fase 5 / scanner via API), nunca pelo popup. Null limpa.
+     */
+    public static function setPowerNow(int $id, ?float $dbm): bool
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        return (bool) $DB->update('glpi_plugin_shopmap_connections', [
+            'power_now_dbm'  => $dbm,
+            'power_now_date' => $dbm === null ? null : date('Y-m-d H:i:s'),
+            'date_mod'       => date('Y-m-d H:i:s'),
+        ], ['id' => $id]);
+    }
+
+    /**
      * Grava/zera o par de portas do core na conexão (Bloco 4c).
      * Uso interno do PortLink — a validação das portas é lá.
      */
-    public static function setPorts(int $id, int $portA, int $portB): bool
+    public static function setPorts(int $id, int $portA, int $portB, string $ptA = '', string $ptB = ''): bool
     {
         /** @var \DBmysql $DB */
         global $DB;
@@ -235,6 +262,9 @@ class Connection
         return (bool) $DB->update('glpi_plugin_shopmap_connections', [
             'networkports_id_a' => max(0, $portA),
             'networkports_id_b' => max(0, $portB),
+            // 4g: origem da porta por lado ('' = core, 'dgoplus' = referência)
+            'porttype_a'        => $ptA === PortLink::PT_DGO ? PortLink::PT_DGO : '',
+            'porttype_b'        => $ptB === PortLink::PT_DGO ? PortLink::PT_DGO : '',
             'date_mod'          => date('Y-m-d H:i:s'),
         ], ['id' => $id]);
     }

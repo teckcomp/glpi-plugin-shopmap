@@ -91,6 +91,15 @@
         return PALETTE.indexOf(conn.color) >= 0 ? conn.color : RAW_CABLE_COLOR;
     }
 
+    /** Potência atual formatada (4j): monitoramento preenche. Puro p/ teste. */
+    function powerNowText(conn) {
+        if (conn.power_now_dbm === null || conn.power_now_dbm === undefined) {
+            return '\u2014 aguardando monitoramento';
+        }
+        var d = (conn.power_now_date || '').substring(0, 16);
+        return conn.power_now_dbm + ' dBm' + (d ? ' (' + d + ')' : '');
+    }
+
     /** Linha de swatches da paleta (popup). Puro p/ teste. */
     function swatchRowHtml(cls, current) {
         var h = '<div class="sm-pop-colors">';
@@ -244,17 +253,29 @@
         return (conn.networkports_id_a || 0) > 0 && (conn.networkports_id_b || 0) > 0;
     }
 
-    /** Um lado do formulário de registro em portas (Bloco 4c). */
+    /** Um lado do formulário de registro em portas (4c; 4g: lado DGO). */
     function portSideHtml(side, key, defName) {
+        var isDgo = side.kind === 'dgoplus';
         var free = (side.ports || []).filter(function (p) { return !p.busy; });
         var h = '<div class="sm-cpop-pside">' +
             '<label class="sm-pop-lbl">Lado ' + key.toUpperCase() + ': ' +
-            esc(side.asset || side.shape || '?') + '</label>' +
+            esc(side.asset || side.shape || '?') +
+            (isDgo ? ' <span class="sm-cpop-pref">porta do DGO+ (refer\u00eancia)</span>' : '') +
+            '</label>' +
             '<select class="sm-cpop-psel" data-side="' + key + '">';
         free.forEach(function (p) {
             h += '<option value="' + p.id + '">' +
-                 esc(p.name || ('porta ' + p.number)) + ' (n\u00ba ' + p.number + ')</option>';
+                 esc(p.name || ('porta ' + p.number)) +
+                 (isDgo ? '' : ' (n\u00ba ' + p.number + ')') + '</option>';
         });
+        if (isDgo) {
+            // 4g: DGO só referencia — portas nascem no DGO+
+            if (free.length === 0) {
+                h += '<option value="0" selected>(sem porta livre \u2014 documente no DGO+)</option>';
+            }
+            h += '</select></div>';
+            return h;
+        }
         h += '<option value="0"' + (free.length === 0 ? ' selected' : '') + '>+ criar nova porta\u2026</option>' +
              '</select>' +
              '<input type="text" class="sm-cpop-pnew' + (free.length === 0 ? '' : ' d-none') + '"' +
@@ -314,6 +335,8 @@
                  (conn.cable_label ? ' \u00b7 ' + esc(conn.cable_label) : '') +
                  (conn.length_m > 0 ? ' \u00b7 ' + conn.length_m + ' m' : '') +
                  (conn.strand_count > 0 ? ' \u00b7 ' + conn.strand_count + ' fibras/pares' : '') +
+                 (conn.power_ref_dbm !== null && conn.power_ref_dbm !== undefined ? ' \u00b7 ref ' + conn.power_ref_dbm + ' dBm' : '') +
+                 (conn.power_now_dbm !== null && conn.power_now_dbm !== undefined ? ' \u00b7 atual ' + conn.power_now_dbm + ' dBm' : '') +
                  (connLinked(conn) ? ' \u00b7 registrado em portas' : '') +
                  '</div>';
             return h + '</div>';
@@ -335,6 +358,16 @@
              '<input type="text" class="sm-cpop-length" value="' + (conn.length_m > 0 ? conn.length_m : '') + '"></span>' +
              '<span><label class="sm-pop-lbl">Fibras/pares</label>' +
              '<input type="text" class="sm-cpop-strands" value="' + (conn.strand_count > 0 ? conn.strand_count : '') + '"></span>' +
+             '</div>';
+
+        // Bloco 4j: potência da fibra (inicial editável; atual read-only)
+        h += '<div class="sm-cpop-row">' +
+             '<span><label class="sm-pop-lbl">Pot\u00eancia inicial (dBm)</label>' +
+             '<input type="text" class="sm-cpop-pwref" inputmode="decimal" maxlength="10" value="' +
+             (conn.power_ref_dbm === null || conn.power_ref_dbm === undefined ? '' : esc(String(conn.power_ref_dbm))) +
+             '" placeholder="ex.: -18,50"></span>' +
+             '<span><label class="sm-pop-lbl">Pot\u00eancia atual</label>' +
+             '<div class="sm-cpop-pwnow">' + esc(powerNowText(conn)) + '</div></span>' +
              '</div>';
 
         h += '<label class="sm-pop-lbl">Cor do cabo (verde = sem defini\u00e7\u00e3o)</label>' +
@@ -1372,6 +1405,8 @@
                 };
                 var csw = box.querySelector('.sm-conn-color.active');
                 if (csw) { params.color = csw.getAttribute('data-color'); }
+                var pwr = q('.sm-cpop-pwref');
+                if (pwr) { params.power_ref_dbm = pwr.value; }
                 // Bloco 4e: pontas escolhidas (apenas selects renderizados)
                 box.querySelectorAll('.sm-cpop-esel').forEach(function (sel) {
                     var side = sel.getAttribute('data-side');
@@ -1498,6 +1533,7 @@
         _shapeColor: shapeColor,
         _connColor: connColor,
         _swatchRowHtml: swatchRowHtml,
+        _powerNowText: powerNowText,
         _nearestSegIndex: nearestSegIndex,
         _shapePopupHtml: popupHtml,
         _connPopupHtml: connPopupHtml,
