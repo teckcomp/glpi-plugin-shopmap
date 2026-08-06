@@ -173,5 +173,11 @@
 /* Bloco 4g — referência de porta do DGO+ */
 .sm-cpop-pref { color: #888; font-weight: normal; font-size: 11px; }
 
+/* Bloco 5: painel de rota */
+.sm-rpop { font-size: 12px; min-width: 220px; }
+.sm-route-steps { list-style: none; margin: 4px 0; padding: 0; }
+.sm-route-steps li { padding: 1px 0; }
+.sm-route-cable { color: #888; padding-left: 4px; }
+
 /* Bloco 4j — potência da fibra */
 .sm-cpop-pwnow { color: #555; padding: 3px 0; font-size: 12px; }

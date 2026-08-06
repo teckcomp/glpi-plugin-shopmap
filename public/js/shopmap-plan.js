@@ -176,6 +176,14 @@
         }
         h += '</div>';
 
+        // Bloco 5: rota até o destino — disponível também em modo leitura
+        // (é visualização, não edição); não faz sentido no próprio destino.
+        if (!shape.is_route_target) {
+            h += '<div class="sm-pop-actions">' +
+                 '<button type="button" class="sm-pop-btn sm-pop-route">' +
+                 '<i class="ti ti-route"></i> Rota at\u00e9 o rack</button></div>';
+        }
+
         if (!canUpdate) {
             h += (shape.label ? '<div>' + esc(shape.label) + '</div>' : '');
             return h + '</div>';
@@ -236,16 +244,128 @@
     function cableMeta(type) { return CABLE_META[type] || CABLE_META['']; }
 
     /**
-     * Visibilidade de um cabo (Bloco 4d). state = { mode, focus, base }:
-     * modo de desenho ativo força tudo visível; foco num shape mostra só
-     * os cabos dele; sem foco vale o toggle geral (base 'all'|'hidden').
+     * Visibilidade de um cabo (Bloco 4d, generalizado no 5). state =
+     * { mode, focus, base, routeSet }: modo de desenho ativo força tudo
+     * visível; ROTA (Bloco 5 — Set de conn ids) tem prioridade sobre o
+     * foco por shape; sem rota, foco num shape mostra só os cabos dele;
+     * sem foco vale o toggle geral (base 'all'|'hidden').
      */
     function cableVisible(state, conn) {
         if (state.mode) { return true; }
+        if (state.routeSet) {
+            return !!state.routeSet[conn.id];
+        }
         if (state.focus) {
             return conn.shapes_id_a === state.focus || conn.shapes_id_b === state.focus;
         }
         return state.base === 'all';
+    }
+
+    /**
+     * Bloco 5 — BFS do shape `startId` até o shape marcado como destino
+     * da rota (is_route_target) na mesma planta. Atravessa QUALQUER
+     * shape (inclui Vago e caixas — não há filtro de tipo). Devolve
+     * null quando não há destino marcado OU o destino é inalcançável
+     * (grafo desconexo); {shapeIds, connIds, totalLength} quando acha.
+     * shapeIds inclui a origem e o destino; connIds tem um a menos
+     * (uma aresta por par de shapes consecutivos). Puro p/ teste.
+     *
+     * @param {Object} shapes shape id -> shape (precisa de is_route_target)
+     * @param {Object} conns  conn id -> conn (precisa de shapes_id_a/b, id, length_m)
+     */
+    function bfsRoute(shapes, conns, startId) {
+        var targetId = 0;
+        Object.keys(shapes).forEach(function (sid) {
+            if (shapes[sid].is_route_target) { targetId = parseInt(sid, 10); }
+        });
+        if (!targetId || !shapes[startId]) { return null; }
+
+        var adj = {};
+        Object.keys(conns).forEach(function (cid) {
+            var c = conns[cid];
+            var a = c.shapes_id_a;
+            var b = c.shapes_id_b;
+            var connId = c.id !== undefined ? c.id : parseInt(cid, 10);
+            var len = c.length_m || 0;
+            if (!adj[a]) { adj[a] = []; }
+            if (!adj[b]) { adj[b] = []; }
+            adj[a].push({ to: b, connId: connId, length: len });
+            adj[b].push({ to: a, connId: connId, length: len });
+        });
+
+        var visited = {};
+        visited[startId] = true;
+        var queue = [{ id: startId, connIds: [], shapeIds: [startId], length: 0 }];
+        while (queue.length) {
+            var cur = queue.shift();
+            if (cur.id === targetId) {
+                return { shapeIds: cur.shapeIds, connIds: cur.connIds, totalLength: cur.length };
+            }
+            var edges = adj[cur.id] || [];
+            for (var i = 0; i < edges.length; i++) {
+                var e = edges[i];
+                if (visited[e.to]) { continue; }
+                visited[e.to] = true;
+                queue.push({
+                    id: e.to,
+                    connIds: cur.connIds.concat([e.connId]),
+                    shapeIds: cur.shapeIds.concat([e.to]),
+                    length: cur.length + e.length
+                });
+            }
+        }
+        return null; // destino existe mas é inalcançável a partir daqui
+    }
+
+    /** Nome do shape num passo da rota, com o item efetivo (4e) do lado
+     *  dele NA CONEXÃO informada (o mesmo shape pode ter itens efetivos
+     *  diferentes em cabos diferentes — ex.: dois equipamentos no
+     *  mesmo rack). Puro p/ teste. */
+    function routeHopName(shapes, conns, shapeId, connId) {
+        var s = shapes[shapeId];
+        var name = s ? (s.label || s.asset_name || ('#' + shapeId)) : ('#' + shapeId);
+        var c = connId ? conns[connId] : null;
+        if (c) {
+            var eff = (c.shapes_id_a === shapeId) ? c.eff_name_a : c.eff_name_b;
+            if (eff) { name += ' \u203a ' + eff; }
+        }
+        return name;
+    }
+
+    /** Painel da rota (Bloco 5): passo a passo com item efetivo (4e) e
+     *  distância total (soma de length_m — insumo do rompimento, Fase
+     *  6). Puro p/ teste; route = retorno de bfsRoute. */
+    function routeSummaryHtml(route, shapes, conns) {
+        var h = '<div class="sm-rpop">';
+        h += '<div class="sm-pop-type"><i class="ti ti-route"></i> Rota at\u00e9 o destino</div>';
+        if (route.connIds.length === 0) {
+            h += '<div class="sm-pop-muted-txt">Voc\u00ea j\u00e1 est\u00e1 no destino.</div>';
+        } else {
+            h += '<ol class="sm-route-steps">';
+            route.shapeIds.forEach(function (sid, i) {
+                var isLast = (i === route.shapeIds.length - 1);
+                var hopConn = (i > 0) ? route.connIds[i - 1] : route.connIds[0];
+                h += '<li>' + esc(routeHopName(shapes, conns, sid, hopConn)) +
+                     (isLast ? ' \u2605' : '') + '</li>';
+                if (!isLast) {
+                    var c = conns[route.connIds[i]];
+                    var meta = cableMeta(c ? c.cable_type : '');
+                    var extra = [];
+                    if (c && c.cable_label) { extra.push(esc(c.cable_label)); }
+                    if (c && c.length_m > 0) { extra.push(c.length_m + ' m'); }
+                    h += '<li class="sm-route-cable">\u2193 ' + meta.label +
+                         (extra.length ? ' \u00b7 ' + extra.join(' \u00b7 ') : '') + '</li>';
+                }
+            });
+            h += '</ol>';
+            h += '<div class="sm-pop-muted-txt">' + route.connIds.length + ' cabo(s)' +
+                 (route.totalLength > 0 ? ' \u00b7 ' + route.totalLength.toFixed(1) + ' m no total' : '') +
+                 '</div>';
+        }
+        h += '<div class="sm-pop-actions">' +
+             '<button type="button" class="sm-pop-btn sm-rpop-close">Ocultar rota</button>' +
+             '</div>';
+        return h + '</div>';
     }
 
     /** Cabo registrado em NetworkPort dos dois lados? (Bloco 4c) */
@@ -485,6 +605,7 @@
         this.cableBase = 'hidden'; // toggle geral (4d): oculto por padrão
         this.cableFocus = 0;      // shape em foco (0 = nenhum)
         this.cablesBtn = null;    // botão do toggle (controle Leaflet)
+        this.routeSet = null;     // Bloco 5: {connId: true, ...} da rota ativa (null = nenhuma)
 
         (cfg.shapes || []).forEach(function (s) { self.addMarker(s); });
         (cfg.connections || []).forEach(function (c) { self.addLine(c); });
@@ -883,11 +1004,16 @@
     // ---------- visibilidade de cabos (Bloco 4d) ----------
 
     App.prototype.visState = function () {
-        return { mode: this.mode, focus: this.cableFocus, base: this.cableBase };
+        return { mode: this.mode, focus: this.cableFocus, base: this.cableBase, routeSet: this.routeSet };
     };
 
     App.prototype.lineVisible = function (conn) {
         return cableVisible(this.visState(), conn);
+    };
+
+    /** Bloco 5: sai do modo "rota" (chamado ao trocar de foco/toggle/desenho). */
+    App.prototype.clearRoute = function () {
+        this.routeSet = null;
     };
 
     /** Aplica o estado atual a todas as linhas (sem tirar do mapa). */
@@ -924,6 +1050,7 @@
                     L.DomEvent.stop(ev);
                     self.cableBase = (self.cableBase === 'all') ? 'hidden' : 'all';
                     self.cableFocus = 0;
+                    self.clearRoute(); // 5: toggle geral sai do modo rota
                     self.applyCableVis();
                 });
                 self.cablesBtn = btn;
@@ -1005,6 +1132,7 @@
     App.prototype.setMode = function (mode) {
         if (this.mode === 'editpath') { this.endEditPath(false); } // 4h
         this.cancelDraw();
+        this.clearRoute(); // 5: entrar em modo de desenho sai do modo rota
         this.mode = mode;
         this.applyCableVis(); // 4d: modo de desenho força cabos visíveis; sair restaura
         var draw = document.getElementById('shopmap-draw-cable');
@@ -1037,6 +1165,7 @@
 
         // modo normal: foca os cabos do shape (4d) e abre o popup
         if (!this.mode) {
+            this.clearRoute(); // 5: navegar para outro shape sai do modo rota
             this.cableFocus = shapeId;
             this.applyCableVis();
             var s = this.shapes[shapeId];
@@ -1155,9 +1284,10 @@
     App.prototype.onMapClick = function (ev) {
         var self = this;
 
-        // 4d: clique no vazio (fora de modo) limpa o foco de cabos
-        if (!this.mode && this.cableFocus) {
+        // 4d/5: clique no vazio (fora de modo) limpa o foco de cabos e a rota
+        if (!this.mode && (this.cableFocus || this.routeSet)) {
             this.cableFocus = 0;
+            this.clearRoute();
             this.applyCableVis();
             this.setHint('Arraste um shape para reposicionar \u00b7 clique nele para editar');
         }
@@ -1216,6 +1346,9 @@
 
         var cbox = el ? el.querySelector('.sm-cpop') : null;
         if (cbox) { this.bindConnPopup(cbox); return; }
+
+        var rbox = el ? el.querySelector('.sm-rpop') : null;
+        if (rbox) { this.bindRoutePopup(rbox); return; }
 
         var box = el ? el.querySelector('.sm-pop') : null;
         if (!box) { return; }
@@ -1299,6 +1432,30 @@
             });
         }
 
+        // ---- Bloco 5: rota até o rack ----
+        var routeBtn = q('.sm-pop-route');
+        if (routeBtn) {
+            routeBtn.addEventListener('click', function () {
+                var route = bfsRoute(self.shapes, self.conns, id);
+                self.map.closePopup();
+                if (!route) {
+                    self.setHint('Sem rota at\u00e9 o destino \u2014 marque o destino da rota (\u2605) em algum shape da planta.');
+                    return;
+                }
+                self.cableFocus = 0;
+                self.routeSet = {};
+                route.connIds.forEach(function (cid) { self.routeSet[cid] = true; });
+                self.applyCableVis();
+                var s = self.shapes[id];
+                L.popup({ minWidth: 230 })
+                    .setLatLng([s.y, s.x])
+                    .setContent(routeSummaryHtml(route, self.shapes, self.conns))
+                    .openOn(self.map);
+                self.setHint((route.connIds.length ? route.connIds.length + ' cabo(s) na rota' : 'j\u00e1 est\u00e1 no destino') +
+                    ' \u00b7 clique no vazio da planta para ocultar');
+            });
+        }
+
         var unlink = q('.sm-pop-unlink');
         if (unlink) {
             unlink.addEventListener('click', function () {
@@ -1359,6 +1516,20 @@
                     }
                     self.map.closePopup();
                 });
+            });
+        }
+    };
+
+    /** Bloco 5: popup de resumo da rota — só tem o botão de ocultar. */
+    App.prototype.bindRoutePopup = function (box) {
+        var self = this;
+        var close = box.querySelector('.sm-rpop-close');
+        if (close) {
+            close.addEventListener('click', function () {
+                self.clearRoute();
+                self.applyCableVis();
+                self.setHint('Arraste um shape para reposicionar \u00b7 clique nele para editar');
+                self.map.closePopup();
             });
         }
     };
@@ -1540,6 +1711,9 @@
         _iconClass: iconClass,
         _iconHtml: iconHtml,
         _popupHtml: popupHtml,
+        _bfsRoute: bfsRoute,
+        _routeHopName: routeHopName,
+        _routeSummaryHtml: routeSummaryHtml,
 
         mount: function (rootId, dataId) {
             var root = document.getElementById(rootId);
