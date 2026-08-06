@@ -646,6 +646,135 @@
         return h + '</div>';
     }
 
+    // ---------- Bloco 7a — exportação PNG (recorte de área) ----------
+
+    /**
+     * Normaliza dois pontos (mousedown/mouseup, em px da planta) num
+     * retângulo {x, y, w, h}. `min` é o tamanho mínimo (px) exigido nos
+     * dois eixos — evita exportar um clique acidental sem arrasto de
+     * verdade. Devolve null se ficar menor que `min`. Puro p/ teste.
+     */
+    function clipRectFromPoints(ax, ay, bx, by, min) {
+        var x = Math.min(ax, bx);
+        var y = Math.min(ay, by);
+        var w = Math.abs(bx - ax);
+        var h = Math.abs(by - ay);
+        if (w < (min || 0) || h < (min || 0)) { return null; }
+        return { x: x, y: y, w: w, h: h };
+    }
+
+    /**
+     * Escala do canvas de exportação (r2): mira um lado maior de
+     * `targetMax` px SEMPRE — amplia recortes pequenos (planta com
+     * coordenadas lógicas pequenas + zoom alto: seleção de 129×63 px
+     * lógicos virava um PNG de 129×63 de fato, menor que a própria
+     * legenda) e reduz recortes gigantes. Puro p/ teste.
+     */
+    function scaleForExport(w, h, targetMax) {
+        var m = targetMax || 1800;
+        var scale = (w > 0 && h > 0) ? m / Math.max(w, h) : 1;
+        return { scale: scale, canvasW: Math.max(1, Math.round(w * scale)), canvasH: Math.max(1, Math.round(h * scale)) };
+    }
+
+    /**
+     * Fator de tamanho dos elementos desenhados por cima (bolinha do
+     * shape, fonte, espessura do cabo, legenda) relativo ao canvas de
+     * saída (r2): px fixos ficavam ilegíveis num canvas grande e
+     * gigantes num pequeno. Base: canvas de 1200 px = fator 1.
+     * Puro p/ teste.
+     */
+    function uiScaleFor(canvasW, canvasH) {
+        var k = Math.max(canvasW, canvasH) / 1200;
+        return Math.min(Math.max(k, 0.75), 3);
+    }
+
+    /**
+     * r4 — converte o retângulo de seleção das coordenadas do Leaflet
+     * (CRS.Simple: lat cresce PARA CIMA, y=0 na base da planta) para
+     * coordenadas de IMAGEM (y=0 no topo, crescendo para baixo — o
+     * sistema dos px do SVG/raster). Sem esta conversão o export saía
+     * espelhado verticalmente E o recorte do viewBox pegava a região
+     * espelhada da planta (causa raiz dos bugs r1/r3). Puro p/ teste.
+     */
+    function rectLatToImage(rect, planH) {
+        return { x: rect.x, y: planH - rect.y - rect.h, w: rect.w, h: rect.h };
+    }
+
+    /** r4 — idem para um Y pontual (shape/vértice de cabo). Puro p/ teste. */
+    function latYToImage(y, planH) {
+        return planH - y;
+    }
+
+    /**
+     * r3 — viewBox de RECORTE do SVG da planta: converte o retângulo
+     * selecionado (em px lógicos do plano, 0..planW/planH) para as
+     * unidades do viewBox original do SVG. Editar o viewBox faz o
+     * navegador rasterizar SÓ a área selecionada, já no tamanho final —
+     * nítido e sem imagem intermediária gigante (a abordagem r2 de
+     * ampliar o SVG inteiro estourava o limite silencioso do navegador
+     * e o fundo saía em branco). `vb` = [x, y, w, h] do viewBox
+     * original (ou null quando o SVG não tem — aí as unidades são os
+     * px naturais informados em natW/natH). Puro p/ teste.
+     */
+    function cropViewBox(rect, planW, planH, vb, natW, natH) {
+        var box = vb || [0, 0, natW, natH];
+        var sx = box[2] / (planW || box[2]);
+        var sy = box[3] / (planH || box[3]);
+        return [
+            box[0] + rect.x * sx,
+            box[1] + rect.y * sy,
+            rect.w * sx,
+            rect.h * sy
+        ];
+    }
+
+    /**
+     * Mesmas entradas da caixa de legenda do mapa (cor da paleta com
+     * texto salvo + linha fixa do Vago quando há algum na planta) —
+     * fatorado de renderLegendBox para ser reaproveitado na exportação
+     * (Bloco 7a: "legenda sempre incluída"). Puro p/ teste.
+     */
+    function legendEntries(legend, hasVago) {
+        var entries = [];
+        PALETTE.forEach(function (c) {
+            var txt = (legend || {})[c];
+            if (txt) { entries.push({ color: c, text: txt }); }
+        });
+        if (hasVago) {
+            entries.push({ color: VAGO_COLOR, text: 'Vago (aguardando equipamento)' });
+        }
+        return entries;
+    }
+
+    /**
+     * Pontos (x,y em px da planta) de um cabo, INCLUSIVE as pontas
+     * (posição atual dos shapes) — mesma lógica de connLatLngs, sem o
+     * swap lat/lng que o Leaflet exige. Puro p/ teste.
+     */
+    function connXYPoints(conn, shapes) {
+        var a = shapes[conn.shapes_id_a];
+        var b = shapes[conn.shapes_id_b];
+        var pts = [{ x: a ? a.x : 0, y: a ? a.y : 0 }];
+        (conn.points || []).forEach(function (p) { pts.push({ x: p[0], y: p[1] }); });
+        pts.push({ x: b ? b.x : 0, y: b ? b.y : 0 });
+        return pts;
+    }
+
+    /** Nome do arquivo baixado: nome da planta sem acento/símbolo +
+     *  timestamp (evita colisão entre exportações). Puro p/ teste. */
+    function exportFilename(planName, date, ext) {
+        var slug = String(planName || 'planta')
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/(^-+|-+$)/g, '') || 'planta';
+        var d = date || new Date();
+        var pad = function (n) { return String(n).length < 2 ? '0' + n : String(n); };
+        var stamp = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) +
+            '-' + pad(d.getHours()) + pad(d.getMinutes());
+        return 'shopmap-' + slug + '-' + stamp + '.' + (ext || 'png');
+    }
+
     // ---------- montagem ----------
 
     function readData(dataId) {
@@ -669,7 +798,10 @@
         });
 
         var bounds = [[0, 0], [h, w]];
-        L.imageOverlay(cfg.fileUrl, bounds).addTo(map);
+        // Bloco 7a: guarda a referência do overlay no próprio map — a
+        // exportação PNG reaproveita o MESMO <img> já carregado (evita
+        // 2º fetch do arquivo da planta).
+        map.smPlanOverlay = L.imageOverlay(cfg.fileUrl, bounds).addTo(map);
         map.fitBounds(bounds);
 
         // Faixa de zoom RELATIVA ao enquadramento (escalas lógicas muito
@@ -732,6 +864,13 @@
         this.cablesBtn = null;    // botão do toggle (controle Leaflet)
         this.routeSet = null;     // Bloco 5: {connId: true, ...} da rota ativa (null = nenhuma)
         this.typeFilter = 'all';  // Bloco 6: filtro de visualização por tipo ('all' = todos)
+        this.planOverlay = this.map.smPlanOverlay || null; // 7a: <img> da planta
+        this.clipMode = false;    // 7a: selecionando área p/ exportar
+        this.clipStart = null;    // 7a: {x,y} inicial do arrasto (px da planta)
+        this.clipRectLayer = null; // 7a: L.rectangle de preview do arrasto
+        this.clipRect = null;     // 7a: retângulo confirmado (aguardando ação)
+        this.clipPanel = null;    // 7a: painel flutuante Exportar/Cancelar
+        this.clipBtn = null;      // 7a: botão do controle Leaflet
 
         (cfg.shapes || []).forEach(function (s) { self.addMarker(s); });
         (cfg.connections || []).forEach(function (c) { self.addLine(c); });
@@ -740,6 +879,8 @@
         // isso ficam fora do `if (cfg.canUpdate)` mais abaixo
         this.addSearchControl();
         this.addFilterControl();
+        // Bloco 7a: exportar também é leitura, não edição — mesmo critério
+        this.addClipControl();
 
         // Bloco 4h: o chip tem tamanho fixo em px de tela e "sumia" no
         // zoom profundo — cresce ~35%/nível acima do enquadramento (teto 2.6x)
@@ -755,6 +896,12 @@
         // clique no mapa: sempre ligado (limpar foco vale também no modo
         // leitura); ações de edição são barradas dentro de onMapClick
         this.map.on('click', function (ev) { self.onMapClick(ev); });
+
+        // Bloco 7a: Esc cancela o recorte também em modo leitura — por
+        // isso fica FORA do listener condicional a canUpdate, abaixo.
+        document.addEventListener('keydown', function (ev) {
+            if (ev.key === 'Escape' && self.clipMode) { self.exitClipMode(); }
+        });
 
         if (cfg.canUpdate) {
             this.bindToolbar();
@@ -833,21 +980,15 @@
     App.prototype.renderLegendBox = function () {
         if (!this.legendDiv) { return; }
         var self = this;
-        var h = '';
-        PALETTE.forEach(function (c) {
-            var txt = self.legend[c];
-            if (txt) {
-                h += '<div class="sm-legend-item"><span class="sm-legend-dot" style="background:' +
-                     c + '"></span>' + esc(txt) + '</div>';
-            }
-        });
         var hasVago = Object.keys(this.shapes).some(function (sid) {
             return self.shapes[sid].shapetype === 'vago';
         });
-        if (hasVago) {
-            h += '<div class="sm-legend-item"><span class="sm-legend-dot" style="background:' +
-                 VAGO_COLOR + '"></span>Vago (aguardando equipamento)</div>';
-        }
+        // Bloco 7a: entradas fatoradas em legendEntries() p/ reaproveitar
+        // exatamente a mesma lista na exportação PNG.
+        var h = legendEntries(this.legend, hasVago).map(function (e) {
+            return '<div class="sm-legend-item"><span class="sm-legend-dot" style="background:' +
+                 e.color + '"></span>' + esc(e.text) + '</div>';
+        }).join('');
         this.legendDiv.innerHTML = h;
         this.legendDiv.style.display = h === '' ? 'none' : '';
     };
@@ -1333,6 +1474,364 @@
         this.map.addControl(new Ctl());
     };
 
+    // ---------- Bloco 7a: recorte de área + exportação PNG ----------
+
+    /**
+     * Botão "Recortar área" — entra/sai do modo de seleção. Disponível
+     * também em modo leitura (exportar não é edição, mesmo critério da
+     * busca/filtro do Bloco 6).
+     */
+    App.prototype.addClipControl = function () {
+        var self = this;
+        var Ctl = L.Control.extend({
+            options: { position: 'topleft' },
+            onAdd: function () {
+                var btn = L.DomUtil.create('a', 'leaflet-bar shopmap-clip-btn');
+                btn.href = '#';
+                btn.title = 'Recortar área para exportar (PNG)';
+                btn.innerHTML = '<i class="ti ti-crop"></i>';
+                L.DomEvent.on(btn, 'click', function (ev) {
+                    L.DomEvent.stop(ev);
+                    if (self.clipMode) { self.exitClipMode(); } else { self.enterClipMode(); }
+                });
+                self.clipBtn = btn;
+                return btn;
+            }
+        });
+        this.map.addControl(new Ctl());
+    };
+
+    /**
+     * Entra no modo de seleção: desativa o pan por arrasto do mapa e
+     * ignora cliques em shapes/cabos (pointer-events none nas panes)
+     * enquanto dura a seleção — sem isso, arrastar sobre um shape
+     * moveria o shape em vez de desenhar o retângulo.
+     */
+    App.prototype.enterClipMode = function () {
+        var self = this;
+        this.setMode(null); // sai de desenho de cabo, se houver
+        this.clipMode = true;
+        this.clipStart = null;
+        this.clipRect = null;
+        if (this.clipBtn) { this.clipBtn.classList.add('active'); }
+        this.map.dragging.disable();
+        if (this.map.tap) { this.map.tap.disable(); }
+
+        var markerPane = this.map.getPane('markerPane');
+        var overlayPane = this.map.getPane('overlayPane');
+        this._clipRestorePE = {
+            marker: markerPane ? markerPane.style.pointerEvents : '',
+            overlay: overlayPane ? overlayPane.style.pointerEvents : ''
+        };
+        if (markerPane) { markerPane.style.pointerEvents = 'none'; }
+        if (overlayPane) { overlayPane.style.pointerEvents = 'none'; }
+
+        this.map.getContainer().style.cursor = 'crosshair';
+        this.setHint('Arraste sobre a planta para selecionar a área a exportar \u00b7 Esc cancela');
+
+        this._clipMouseDown = function (ev) { self.onClipMouseDown(ev); };
+        L.DomEvent.on(this.map.getContainer(), 'mousedown', this._clipMouseDown);
+    };
+
+    /** Sai do modo de seleção e restaura o mapa ao estado normal. */
+    App.prototype.exitClipMode = function () {
+        this.clipMode = false;
+        this.clipStart = null;
+        this.clipRect = null;
+        if (this.clipBtn) { this.clipBtn.classList.remove('active'); }
+        this.map.dragging.enable();
+        if (this.map.tap) { this.map.tap.enable(); }
+
+        var markerPane = this.map.getPane('markerPane');
+        var overlayPane = this.map.getPane('overlayPane');
+        if (markerPane && this._clipRestorePE) { markerPane.style.pointerEvents = this._clipRestorePE.marker; }
+        if (overlayPane && this._clipRestorePE) { overlayPane.style.pointerEvents = this._clipRestorePE.overlay; }
+
+        this.map.getContainer().style.cursor = '';
+        if (this.clipRectLayer) { this.map.removeLayer(this.clipRectLayer); this.clipRectLayer = null; }
+        this.hideClipPanel();
+
+        var container = this.map.getContainer();
+        if (this._clipMouseDown) { L.DomEvent.off(container, 'mousedown', this._clipMouseDown); }
+        if (this._clipMouseMove) { L.DomEvent.off(document, 'mousemove', this._clipMouseMove); }
+        if (this._clipMouseUp) { L.DomEvent.off(document, 'mouseup', this._clipMouseUp); }
+
+        this.setHint(this.cfg.canUpdate ? 'Arraste um shape para reposicionar \u00b7 clique nele para editar' : '');
+    };
+
+    App.prototype.onClipMouseDown = function (ev) {
+        var self = this;
+        if (ev.button !== undefined && ev.button !== 0) { return; } // só botão esquerdo
+        L.DomEvent.stop(ev);
+        if (this.clipRectLayer) { this.map.removeLayer(this.clipRectLayer); this.clipRectLayer = null; }
+        this.hideClipPanel();
+
+        var latlng = this.map.mouseEventToLatLng(ev);
+        this.clipStart = { x: latlng.lng, y: latlng.lat };
+        this.clipRectLayer = L.rectangle([[latlng.lat, latlng.lng], [latlng.lat, latlng.lng]], {
+            color: '#1a6dd8', weight: 1, dashArray: '5 4', fillOpacity: 0.08
+        }).addTo(this.map);
+
+        this._clipMouseMove = function (mv) { self.onClipMouseMove(mv); };
+        this._clipMouseUp = function (mv) { self.onClipMouseUp(mv); };
+        L.DomEvent.on(document, 'mousemove', this._clipMouseMove);
+        L.DomEvent.on(document, 'mouseup', this._clipMouseUp);
+    };
+
+    App.prototype.onClipMouseMove = function (ev) {
+        if (!this.clipStart || !this.clipRectLayer) { return; }
+        var latlng = this.map.mouseEventToLatLng(ev);
+        var rect = clipRectFromPoints(this.clipStart.x, this.clipStart.y, latlng.lng, latlng.lat, 0);
+        this.clipRectLayer.setBounds([[rect.y, rect.x], [rect.y + rect.h, rect.x + rect.w]]);
+    };
+
+    App.prototype.onClipMouseUp = function (ev) {
+        L.DomEvent.off(document, 'mousemove', this._clipMouseMove);
+        L.DomEvent.off(document, 'mouseup', this._clipMouseUp);
+        if (!this.clipStart) { return; }
+        var latlng = this.map.mouseEventToLatLng(ev);
+        // 8px mínimo nos dois eixos — evita "clique sem querer" virar
+        // recorte de 0x0 e travar num painel vazio
+        var rect = clipRectFromPoints(this.clipStart.x, this.clipStart.y, latlng.lng, latlng.lat, 8);
+        this.clipStart = null;
+        if (!rect) {
+            if (this.clipRectLayer) { this.map.removeLayer(this.clipRectLayer); this.clipRectLayer = null; }
+            this.setHint('Seleção pequena demais \u2014 arraste uma área maior \u00b7 Esc cancela');
+            return;
+        }
+        this.clipRect = rect;
+        this.showClipPanel(rect);
+    };
+
+    /**
+     * Painel de ação após soltar o arrasto (Exportar/Selecionar de
+     * novo/Cancelar). Div absoluta no container do mapa, no mesmo
+     * padrão da busca do Bloco 6 (não é L.Control porque o canto
+     * topleft empilha na vertical e ficaria longe do retângulo).
+     */
+    App.prototype.showClipPanel = function (rect) {
+        var self = this;
+        this.hideClipPanel();
+        var panel = document.createElement('div');
+        panel.className = 'shopmap-clip-panel';
+        // r2: mostra o tamanho do PNG de SAÍDA (o "129 × 63 px" lógicos
+        // da planta confundia — parecia que o arquivo sairia minúsculo)
+        var out = scaleForExport(rect.w, rect.h, 1800);
+        panel.innerHTML =
+            '<span class="sm-clip-info">PNG de ' + out.canvasW + ' \u00d7 ' + out.canvasH + ' px</span>' +
+            '<button type="button" class="btn btn-primary btn-sm sm-clip-export">' +
+            '<i class="ti ti-download me-1"></i>Exportar PNG</button>' +
+            '<button type="button" class="btn btn-outline-secondary btn-sm sm-clip-redo">Selecionar de novo</button>' +
+            '<button type="button" class="btn btn-outline-secondary btn-sm sm-clip-cancel">Cancelar</button>';
+        L.DomEvent.disableClickPropagation(panel);
+        this.map.getContainer().appendChild(panel);
+        this.clipPanel = panel;
+
+        panel.querySelector('.sm-clip-export').addEventListener('click', function () {
+            self.exportPng(rect);
+        });
+        panel.querySelector('.sm-clip-redo').addEventListener('click', function () {
+            if (self.clipRectLayer) { self.map.removeLayer(self.clipRectLayer); self.clipRectLayer = null; }
+            self.hideClipPanel();
+            self.setHint('Arraste sobre a planta para selecionar a área a exportar \u00b7 Esc cancela');
+        });
+        panel.querySelector('.sm-clip-cancel').addEventListener('click', function () {
+            self.exitClipMode();
+        });
+    };
+
+    App.prototype.hideClipPanel = function () {
+        if (this.clipPanel) { this.clipPanel.remove(); this.clipPanel = null; }
+    };
+
+    /**
+     * Gera o PNG do retângulo selecionado e dispara o download no
+     * navegador. Redesenha a partir dos DADOS (planta rasterizada +
+     * cabos atualmente visíveis + shapes filtrados + legenda), não
+     * captura a tela — evita depender de ícones HTML em canvas.
+     * Bloco 7a: só download local, sem servidor. O histórico e o PDF
+     * entram no Bloco 7b reaproveitando este mesmo desenho.
+     */
+    App.prototype.exportPng = function (rect) {
+        var self = this;
+        this.setHint('Gerando PNG\u2026');
+
+        // r3: `srcMode` = 'crop' quando srcImg JÁ É o recorte no tamanho
+        // final (SVG com viewBox editado — ver start()); 'full' quando é
+        // o <img> original da planta (raster ou fallback), aí recorta
+        // com source-rect no drawImage.
+        var draw = function (srcImg, srcMode) {
+            var img = self.planOverlay && self.planOverlay.getElement();
+            var natW = (img && img.naturalWidth) || self.cfg.width || rect.w;
+            var natH = (img && img.naturalHeight) || self.cfg.height || rect.h;
+            var imgScaleX = natW / (self.cfg.width || natW);
+            var imgScaleY = natH / (self.cfg.height || natH);
+
+            // r4: daqui pra baixo TUDO em coordenadas de imagem (y p/ baixo)
+            var planH = self.cfg.height || rect.h;
+            var irect = rectLatToImage(rect, planH);
+
+            var dim = scaleForExport(irect.w, irect.h, 1800);
+            var ui = uiScaleFor(dim.canvasW, dim.canvasH); // r2: tamanhos proporcionais
+            var canvas = document.createElement('canvas');
+            canvas.width = dim.canvasW;
+            canvas.height = dim.canvasH;
+            var ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = '#f4f4f4';
+            ctx.fillRect(0, 0, dim.canvasW, dim.canvasH);
+            if (srcImg && srcMode === 'crop') {
+                ctx.drawImage(srcImg, 0, 0, dim.canvasW, dim.canvasH);
+            } else if (srcImg) {
+                ctx.drawImage(srcImg,
+                    irect.x * imgScaleX, irect.y * imgScaleY, irect.w * imgScaleX, irect.h * imgScaleY,
+                    0, 0, dim.canvasW, dim.canvasH);
+            }
+
+            // cabos: mesmo estado de visibilidade da tela (foco/rota/toggle)
+            var state = self.visState();
+            Object.keys(self.conns).forEach(function (cid) {
+                var c = self.conns[cid];
+                if (!cableVisible(state, c)) { return; }
+                var pts = connXYPoints(c, self.shapes);
+                ctx.beginPath();
+                pts.forEach(function (p, i) {
+                    var cx = (p.x - irect.x) * dim.scale;
+                    var cy = (latYToImage(p.y, planH) - irect.y) * dim.scale; // r4
+                    if (i === 0) { ctx.moveTo(cx, cy); } else { ctx.lineTo(cx, cy); }
+                });
+                var dash = cableDash(c, self.shapes);
+                ctx.setLineDash(dash ? dash.split(' ').map(function (n) { return Number(n) * ui; }) : []);
+                ctx.strokeStyle = connColor(c);
+                ctx.lineWidth = 2.5 * ui;
+                ctx.stroke();
+            });
+            ctx.setLineDash([]);
+
+            // shapes: círculo colorido (mesma cor/chave da legenda) + rótulo
+            var margin = 20 * ui;
+            Object.keys(self.shapes).forEach(function (sid) {
+                var s = self.shapes[sid];
+                if (!shapeMatchesFilter(s, self.typeFilter)) { return; }
+                var cx = (s.x - irect.x) * dim.scale;
+                var cy = (latYToImage(s.y, planH) - irect.y) * dim.scale; // r4
+                if (cx < -margin || cy < -margin || cx > dim.canvasW + margin || cy > dim.canvasH + margin) { return; }
+                ctx.beginPath();
+                ctx.arc(cx, cy, 9 * ui, 0, Math.PI * 2);
+                ctx.fillStyle = shapeColor(s);
+                ctx.fill();
+                ctx.lineWidth = 1.5 * ui;
+                ctx.strokeStyle = '#fff';
+                ctx.stroke();
+                var text = s.label || s.asset_name;
+                if (text) {
+                    ctx.font = Math.round(11 * ui) + 'px sans-serif';
+                    var tw = ctx.measureText(text).width;
+                    ctx.fillStyle = 'rgba(255,255,255,.85)';
+                    ctx.fillRect(cx + 11 * ui, cy - 7 * ui, tw + 6 * ui, 14 * ui);
+                    ctx.fillStyle = '#222';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(text, cx + 14 * ui, cy);
+                }
+            });
+
+            // legenda — sempre incluída (decisão do usuário p/ o Bloco 7)
+            var hasVago = Object.keys(self.shapes).some(function (sid) { return self.shapes[sid].shapetype === 'vago'; });
+            var entries = legendEntries(self.legend, hasVago);
+            if (entries.length) {
+                // r2: largura acompanha o texto mais longo (antes era 210
+                // fixo e cortava textos compridos) e tudo escala com `ui`
+                ctx.font = Math.round(11 * ui) + 'px sans-serif';
+                var maxTw = 0;
+                entries.forEach(function (e) {
+                    maxTw = Math.max(maxTw, ctx.measureText(e.text).width);
+                });
+                var pad = 8 * ui, rowH = 16 * ui;
+                var lw = pad * 2 + 16 * ui + maxTw;
+                var lh = pad * 2 + entries.length * rowH;
+                var lx = dim.canvasW - lw - 10 * ui, ly = dim.canvasH - lh - 10 * ui;
+                ctx.fillStyle = 'rgba(255,255,255,.92)';
+                ctx.fillRect(lx, ly, lw, lh);
+                ctx.strokeStyle = '#ccc';
+                ctx.lineWidth = 1 * ui;
+                ctx.strokeRect(lx, ly, lw, lh);
+                ctx.textBaseline = 'middle';
+                entries.forEach(function (e, i) {
+                    var ey = ly + pad + i * rowH + rowH / 2;
+                    ctx.beginPath();
+                    ctx.arc(lx + pad + 6 * ui, ey, 5 * ui, 0, Math.PI * 2);
+                    ctx.fillStyle = e.color;
+                    ctx.fill();
+                    ctx.fillStyle = '#222';
+                    ctx.fillText(e.text, lx + pad + 16 * ui, ey);
+                });
+            }
+
+            canvas.toBlob(function (blob) {
+                if (!blob) { self.setHint('Falha ao gerar o PNG.'); return; }
+                var url = URL.createObjectURL(blob);
+                var a = document.createElement('a');
+                a.href = url;
+                a.download = exportFilename(self.cfg.name, new Date(), 'png');
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+                self.setHint('PNG exportado.');
+                self.exitClipMode();
+            }, 'image/png');
+        };
+
+        // r3: SVG → recorta DENTRO do próprio SVG via viewBox, com
+        // width/height já no tamanho do PNG final. O navegador rasteriza
+        // só a área selecionada, nítida, sem imagem intermediária gigante
+        // (o r2 ampliava o SVG inteiro e estourava o limite silencioso do
+        // navegador — a planta saía em branco). Raster (PNG/JPG) e
+        // qualquer falha caem no <img> original com source-rect.
+        var start = function () {
+            var img = self.planOverlay && self.planOverlay.getElement();
+            if (!img) { draw(null, 'full'); return; }
+            var natW = img.naturalWidth || self.cfg.width || rect.w;
+            var natH = img.naturalHeight || self.cfg.height || rect.h;
+            // r4: o viewBox do SVG é y-para-baixo — recorte na região
+            // convertida, senão pega o espelho vertical da área
+            var irect = rectLatToImage(rect, self.cfg.height || rect.h);
+            var dim = scaleForExport(irect.w, irect.h, 1800);
+
+            fetch(self.cfg.fileUrl).then(function (r) {
+                var ct = (r.headers.get('Content-Type') || '').toLowerCase();
+                if (ct.indexOf('svg') < 0) { throw new Error('not-svg'); }
+                return r.text();
+            }).then(function (text) {
+                var doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+                var root = doc.documentElement;
+                if (!root || root.nodeName.toLowerCase() !== 'svg') { throw new Error('bad-svg'); }
+                var vbAttr = root.getAttribute('viewBox');
+                var vb = null;
+                if (vbAttr) {
+                    var parts = vbAttr.trim().split(/[\s,]+/).map(Number);
+                    if (parts.length === 4 && parts.every(function (n) { return isFinite(n); })) { vb = parts; }
+                }
+                var crop = cropViewBox(irect, self.cfg.width, self.cfg.height, vb, natW, natH);
+                root.setAttribute('viewBox', crop.join(' '));
+                root.setAttribute('width', String(dim.canvasW));
+                root.setAttribute('height', String(dim.canvasH));
+                root.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+                var blob = new Blob([new XMLSerializer().serializeToString(doc)], { type: 'image/svg+xml' });
+                var url = URL.createObjectURL(blob);
+                var cropImg = new Image();
+                cropImg.onload = function () { URL.revokeObjectURL(url); draw(cropImg, 'crop'); };
+                cropImg.onerror = function () { URL.revokeObjectURL(url); draw(img, 'full'); };
+                cropImg.src = url;
+            }).catch(function () {
+                draw(img, 'full'); // raster ou qualquer falha: exporta com a qualidade que der
+            });
+        };
+
+        var img = this.planOverlay && this.planOverlay.getElement();
+        if (img && !img.complete) { img.addEventListener('load', start, { once: true }); } else { start(); }
+    };
+
     /**
      * Shape mais próximo do ponto clicado, em px de TELA (independe do
      * zoom). Devolve o id, ou 0 se nenhum estiver a <= tol px.
@@ -1556,6 +2055,10 @@
 
     App.prototype.onMapClick = function (ev) {
         var self = this;
+
+        // 7a: durante o arrasto/seleção do recorte, clique no mapa não
+        // deve mexer em foco de cabos nem em shapes
+        if (this.clipMode) { return; }
 
         // 4d/5: clique no vazio (fora de modo) limpa o foco de cabos e a rota
         if (!this.mode && (this.cableFocus || this.routeSet)) {
@@ -2009,6 +2512,16 @@
         _searchShapes: searchShapes,
         _searchResultHtml: searchResultHtml,
         _vagoRecoveryOptionsHtml: vagoRecoveryOptionsHtml,
+        // Bloco 7a — exportação PNG
+        _clipRectFromPoints: clipRectFromPoints,
+        _scaleForExport: scaleForExport,
+        _uiScaleFor: uiScaleFor,
+        _cropViewBox: cropViewBox,
+        _rectLatToImage: rectLatToImage,
+        _latYToImage: latYToImage,
+        _legendEntries: legendEntries,
+        _connXYPoints: connXYPoints,
+        _exportFilename: exportFilename,
 
         mount: function (rootId, dataId) {
             var root = document.getElementById(rootId);

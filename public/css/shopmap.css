@@ -219,3 +219,29 @@
 .shopmap-filter-ctl a { font-size: 14px; }
 .shopmap-filter-ctl a.active,
 .shopmap-filter-ctl a.active:hover { background: #1a6dd8; color: #fff; }
+
+/* Bloco 7a — botão "Recortar área" (mesmo padrão do toggle de cabos) */
+.shopmap-clip-btn {
+    display: block;
+    width: 30px;
+    height: 30px;
+    line-height: 30px;
+    text-align: center;
+    font-size: 15px;
+    background: #fff;
+    color: #333;
+    text-decoration: none;
+}
+.shopmap-clip-btn:hover { background: #f4f4f4; color: #000; }
+.shopmap-clip-btn.active { background: #1a6dd8; color: #fff; }
+.shopmap-clip-btn.active:hover { background: #1459ad; color: #fff; }
+
+/* Bloco 7a — painel de ação após soltar o arrasto do recorte */
+.shopmap-clip-panel {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    z-index: 1000; background: #fff; border-radius: 6px;
+    box-shadow: 0 1px 5px rgba(0,0,0,.4);
+    padding: 6px 10px; display: flex; align-items: center; gap: 8px;
+    font-size: 12px; white-space: nowrap;
+}
+.sm-clip-info { color: #555; }
