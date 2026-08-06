@@ -66,9 +66,13 @@ class Install
      *  - vago:      ponto de espera (Bloco 4f, decisão do usuário):
      *               fibra lançada aguardando equipamento — sem ativo,
      *               cabos com ponta aqui desenham tracejado
+     *  - access_point: Access Point (Bloco 6) — ícone fixo, sem depender
+     *               do itemtype vinculado (NetworkEquipment é genérico
+     *               demais pra distinguir AP de roteador/switch)
+     *  - onu_router: ONU / Roteador (Bloco 6) — idem, ícone fixo
      *  - area:      área de loja/setor (polígono, sem ativo)
      */
-    public const SHAPE_TYPES = ['equipment', 'rack', 'passbox', 'vago', 'area'];
+    public const SHAPE_TYPES = ['equipment', 'rack', 'passbox', 'vago', 'access_point', 'onu_router', 'area'];
 
     /**
      * Paleta fixa de 6 cores (decisões 06/08/2026: +preto; amarelo→dourado) — chips e

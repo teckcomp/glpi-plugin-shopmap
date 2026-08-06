@@ -35,12 +35,33 @@
     }
 
     var TYPE_META = {
-        equipment: { label: 'Equipamento', cls: 'sm-shape-equipment', icon: 'ti-cpu' },
-        rack:      { label: 'Rack',        cls: 'sm-shape-rack',      icon: 'ti-server-2' },
-        passbox:   { label: 'Caixa',       cls: 'sm-shape-passbox',   icon: 'ti-square-rounded' },
+        equipment:    { label: 'Equipamento',    cls: 'sm-shape-equipment', icon: 'ti-cpu' },
+        rack:         { label: 'Rack',            cls: 'sm-shape-rack',      icon: 'ti-server-2' },
+        passbox:      { label: 'Caixa',           cls: 'sm-shape-passbox',   icon: 'ti-square-rounded' },
+        // Bloco 6: tipos com ícone FIXO (não dependem do itemtype do
+        // ativo vinculado — ver iconClass) para diferenciar visualmente
+        // de um equipamento genérico de rede
+        access_point: { label: 'Access Point',    cls: 'sm-shape-ap',        icon: 'ti-access-point' },
+        onu_router:   { label: 'ONU / Roteador',  cls: 'sm-shape-onu',       icon: 'ti-router' },
         // Bloco 4f: ponto de espera — fibra lançada aguardando equipamento
-        vago:      { label: 'Vago (aguardando equipamento)', cls: 'sm-shape-vago', icon: 'ti-circle-dashed' }
+        vago:         { label: 'Vago (aguardando equipamento)', cls: 'sm-shape-vago', icon: 'ti-circle-dashed' }
     };
+
+    // Bloco 6: tipos que entram no filtro de visualização e no botão de
+    // "adicionar" — na ordem em que aparecem no painel de filtro.
+    var FILTER_TYPES = ['equipment', 'rack', 'passbox', 'access_point', 'onu_router', 'vago'];
+
+    // Bloco 6 r2: pra ONDE um shape Vago pode voltar (espelha a whitelist
+    // de Shape::setType no PHP) — o usuário escolhe no popup em vez de
+    // sempre cair em "equipment".
+    var VAGO_RECOVERY_TYPES = ['equipment', 'rack', 'passbox', 'access_point', 'onu_router'];
+
+    /** <option> do seletor "Converter para" no popup do Vago. Puro p/ teste. */
+    function vagoRecoveryOptionsHtml() {
+        return VAGO_RECOVERY_TYPES.map(function (t) {
+            return '<option value="' + t + '">' + esc(TYPE_META[t].label) + '</option>';
+        }).join('');
+    }
 
     /**
      * Índice do segmento mais próximo de um ponto (coords de tela).
@@ -123,9 +144,28 @@
         Pdu:                'ti-plug'
     };
 
+    /**
+     * Bloco 6: só o tipo genérico "equipment" empresta o ícone do ATIVO
+     * vinculado (ITEMTYPE_ICON — ex.: Computer vira monitor). Os demais
+     * tipos (rack/passbox/vago/access_point/onu_router) usam o ícone
+     * FIXO do shapetype escolhido na hora de posicionar: evita que um
+     * Access Point ou ONU linkado a NetworkEquipment vire o mesmo ícone
+     * genérico "ti-network" de qualquer outro equipamento de rede.
+     *
+     * Bloco 6 r3 — exceção do DGO: shape vinculado a PassiveDCEquipment
+     * (=DGO) SEMPRE mostra o ícone de DGO (grade), não importa se foi
+     * posicionado como equipamento ou caixa. DGO é DGO.
+     */
+    function isDgo(shape) {
+        return shape.itemtype === 'PassiveDCEquipment';
+    }
+
     function iconClass(shape) {
-        return ITEMTYPE_ICON[shape.itemtype] ||
-            (TYPE_META[shape.shapetype] || TYPE_META.equipment).icon;
+        if (isDgo(shape)) { return ITEMTYPE_ICON.PassiveDCEquipment; }
+        if (shape.shapetype === 'equipment' && ITEMTYPE_ICON[shape.itemtype]) {
+            return ITEMTYPE_ICON[shape.itemtype];
+        }
+        return (TYPE_META[shape.shapetype] || TYPE_META.equipment).icon;
     }
 
     function iconHtml(shape) {
@@ -139,14 +179,95 @@
             '</div>';
     }
 
+    // ---------- Bloco 6: busca de shape + filtro de visualização ----------
+
+    /**
+     * Categoria EFETIVA do shape para o filtro (Bloco 6 r3): DGO conta
+     * como caixa de passagem, não importa como foi posicionado — assim
+     * o filtro "Caixa de passagem" pega TODAS as DGOs de uma vez, sem o
+     * usuário precisar reposicionar as criadas como equipamento.
+     */
+    function filterCategory(shape) {
+        return isDgo(shape) ? 'passbox' : shape.shapetype;
+    }
+
+    /** Um shape passa no filtro de tipo ativo? 'all' sempre passa;
+     *  'none' (r5) oculta TODOS os shapes de uma vez. Puro p/ teste. */
+    function shapeMatchesFilter(shape, filter) {
+        if (filter === 'none') { return false; }
+        return !filter || filter === 'all' || filterCategory(shape) === filter;
+    }
+
+    /**
+     * Acha shapes cujo rótulo OU nome do ativo contém a busca — e também
+     * (r4) equipamentos DENTRO de racks (rack_items): nesse caso o hit
+     * aponta pro shape do rack, com `via` = nome do item interno, pra
+     * lista de resultados mostrar "Switch X · em Rack-L3" e o popup
+     * destacar a linha. Case-insensitive; prefixo primeiro; limitado a
+     * `limit`. Devolve [{id, via}] (via = '' quando o match é do próprio
+     * shape). Puro p/ teste — recebe o dicionário de shapes (id -> shape).
+     */
+    function searchShapes(shapes, query, limit) {
+        var q = String(query == null ? '' : query).trim().toLowerCase();
+        if (!q) { return []; }
+        var hits = [];
+        Object.keys(shapes).forEach(function (sid) {
+            var s = shapes[sid];
+            var text = ((s.label || '') + ' ' + (s.asset_name || '')).toLowerCase();
+            var idx = text.indexOf(q);
+            if (idx >= 0) {
+                hits.push({ id: s.id, via: '', idx: idx });
+                return; // o shape em si já casou; não duplica com itens internos
+            }
+            // r4: procurar nos equipamentos internos do rack
+            var items = s.rack_items || [];
+            for (var i = 0; i < items.length; i++) {
+                var iidx = String(items[i].name || '').toLowerCase().indexOf(q);
+                if (iidx >= 0) {
+                    hits.push({ id: s.id, via: items[i].name, idx: iidx });
+                    break; // um hit por rack basta na lista
+                }
+            }
+        });
+        hits.sort(function (a, b) { return a.idx - b.idx; });
+        return hits.slice(0, limit || 8).map(function (h) {
+            return { id: h.id, via: h.via };
+        });
+    }
+
+    /** Linha de resultado da busca: ícone do tipo + rótulo/ativo; se o
+     *  match veio de item interno do rack (via), mostra "item · em rack". */
+    function searchResultHtml(shape, via) {
+        var text = shape.label || shape.asset_name || (TYPE_META[shape.shapetype] || TYPE_META.equipment).label;
+        if (via) {
+            return '<i class="ti ti-server-2"></i> <span>' + esc(via) +
+                   ' <span class="sm-pop-muted-txt">\u00b7 em ' + esc(text) + '</span></span>';
+        }
+        return '<i class="ti ' + iconClass(shape) + '"></i> <span>' + esc(text) + '</span>';
+    }
+
     function popupHtml(shape, canUpdate, links) {
         var meta = TYPE_META[shape.shapetype] || TYPE_META.equipment;
-        var h = '<div class="sm-pop" data-shape-id="' + shape.id + '">';
+        var isRackPop = (shape.rack_items || []).length > 0;
+        var h = '<div class="sm-pop' + (isRackPop ? ' sm-pop-wide' : '') + '" data-shape-id="' + shape.id + '">';
         h += '<div class="sm-pop-type">' + meta.label + (shape.is_route_target ? ' \u2605 destino da rota' : '') + '</div>';
 
         if (shape.asset_name) {
             h += '<div class="sm-pop-asset">Ativo: <strong>' + esc(shape.asset_name) + '</strong> ' +
                  '<a href="' + esc(shape.asset_url) + '" target="_blank" title="Abrir cadastro no GLPI">\u2197</a></div>';
+        }
+
+        // Bloco 6 r4: conteúdo do rack/enclosure (leitura do Item_Rack
+        // nativo — o cadastro continua sendo feito no GLPI, aqui só exibe)
+        if (isRackPop) {
+            h += '<div class="sm-pop-rackitems"><div class="sm-pop-lbl">Equipamentos no rack (' +
+                 shape.rack_items.length + ')</div><table>';
+            shape.rack_items.forEach(function (ri) {
+                h += '<tr data-rackitem="' + esc(ri.name) + '">' +
+                     '<td>' + esc(ri.name) + '</td>' +
+                     '<td class="sm-pop-muted-txt">' + esc(ri.type_label) + '</td></tr>';
+            });
+            h += '</table></div>';
         }
         if (shape.dgo_url) {
             h += '<div class="sm-pop-asset"><a href="' + esc(shape.dgo_url) + '" target="_blank">' +
@@ -199,8 +320,12 @@
                  'Os cabos tracejados desta ponta est\u00e3o preservados.</div>';
             h += '<div class="sm-pop-actions">' +
                  '<button type="button" class="sm-pop-btn sm-pop-save">Salvar</button>' +
-                 '<button type="button" class="sm-pop-btn sm-pop-unvago">Converter em equipamento</button>' +
                  '<button type="button" class="sm-pop-btn sm-pop-del">Excluir</button>' +
+                 '</div>' +
+                 '<label class="sm-pop-lbl">Converter para</label>' +
+                 '<div class="sm-pop-searchrow">' +
+                 '<select class="sm-pop-untype">' + vagoRecoveryOptionsHtml() + '</select>' +
+                 '<button type="button" class="sm-pop-btn sm-pop-unvago">Converter</button>' +
                  '</div>';
             return h + '</div>';
         }
@@ -606,10 +731,15 @@
         this.cableFocus = 0;      // shape em foco (0 = nenhum)
         this.cablesBtn = null;    // botão do toggle (controle Leaflet)
         this.routeSet = null;     // Bloco 5: {connId: true, ...} da rota ativa (null = nenhuma)
+        this.typeFilter = 'all';  // Bloco 6: filtro de visualização por tipo ('all' = todos)
 
         (cfg.shapes || []).forEach(function (s) { self.addMarker(s); });
         (cfg.connections || []).forEach(function (c) { self.addLine(c); });
         this.addCablesControl();
+        // Bloco 6: busca e filtro funcionam também em modo leitura, por
+        // isso ficam fora do `if (cfg.canUpdate)` mais abaixo
+        this.addSearchControl();
+        this.addFilterControl();
 
         // Bloco 4h: o chip tem tamanho fixo em px de tela e "sumia" no
         // zoom profundo — cresce ~35%/nível acima do enquadramento (teto 2.6x)
@@ -762,13 +892,17 @@
         }
         this.markers[shape.id] = marker;
         if (this.legendDiv) { this.renderLegendBox(); } // 4i
+        this.applyFilterTo(shape.id); // 6: shape novo já nasce filtrado
     };
 
     App.prototype.refreshMarker = function (shape) {
         this.shapes[shape.id] = shape;
         var marker = this.markers[shape.id];
         if (marker) {
+            // setIcon troca o elemento do DOM inteiro — reaplica o
+            // filtro de tipo por cima (6), senão ele "reaparece" visível
             marker.setIcon(L.divIcon({ className: 'sm-shape-wrap', html: iconHtml(shape), iconSize: null }));
+            this.applyFilterTo(shape.id);
         }
         this.renderLegendBox(); // 4i: linha do Vago acompanha conversões
     };
@@ -1055,6 +1189,145 @@
                 });
                 self.cablesBtn = btn;
                 return btn;
+            }
+        });
+        this.map.addControl(new Ctl());
+    };
+
+    // ---------- Bloco 6: busca de shape ----------
+
+    /** Centraliza no shape e abre o popup dele (foco de cabos incluso).
+     *  r4: `highlight` = nome de item interno do rack a destacar na
+     *  tabela do popup (vindo da busca). */
+    App.prototype.focusShape = function (shapeId, highlight) {
+        var s = this.shapes[shapeId];
+        if (!s) { return; }
+        this.popupHighlight = highlight || '';
+        this.map.panTo([s.y, s.x]);
+        this.onShapeClick(shapeId);
+    };
+
+    /**
+     * Campo de busca (rótulo/ativo/itens de rack) no plano atual.
+     * r4 (posição, pedido do usuário): fica no TOPO do mapa, à direita
+     * dos botões de zoom — div absoluta no container do mapa, não um
+     * L.Control (o canto topleft do Leaflet empilha na vertical e
+     * jogava a busca lá embaixo, depois de tela cheia/cabos).
+     */
+    App.prototype.addSearchControl = function () {
+        var self = this;
+        var box = document.createElement('div');
+        box.className = 'shopmap-search-ctl';
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'shopmap-search-input';
+        input.placeholder = 'Buscar shape...';
+        box.appendChild(input);
+        var list = document.createElement('ul');
+        list.className = 'shopmap-search-results d-none';
+        box.appendChild(list);
+        L.DomEvent.disableClickPropagation(box);
+        L.DomEvent.disableScrollPropagation(box);
+        this.map.getContainer().appendChild(box);
+
+        var pick = function (hit) {
+            list.classList.add('d-none');
+            input.value = '';
+            self.focusShape(hit.id, hit.via);
+        };
+
+        var render = function () {
+            list.innerHTML = '';
+            if (!input.value.trim()) { list.classList.add('d-none'); return; }
+            var hits = searchShapes(self.shapes, input.value, 8);
+            if (hits.length === 0) {
+                var empty = document.createElement('li');
+                empty.className = 'shopmap-search-empty';
+                empty.textContent = 'nenhum resultado';
+                list.appendChild(empty);
+            } else {
+                hits.forEach(function (hit) {
+                    var li = document.createElement('li');
+                    li.innerHTML = searchResultHtml(self.shapes[hit.id], hit.via);
+                    li.addEventListener('click', function () { pick(hit); });
+                    list.appendChild(li);
+                });
+            }
+            list.classList.remove('d-none');
+        };
+
+        input.addEventListener('input', render);
+        input.addEventListener('focus', render);
+        input.addEventListener('blur', function () {
+            // atraso p/ o clique no <li> registrar antes de sumir
+            setTimeout(function () { list.classList.add('d-none'); }, 150);
+        });
+        input.addEventListener('keydown', function (ev) {
+            if (ev.key === 'Escape') {
+                list.classList.add('d-none');
+                input.blur();
+            } else if (ev.key === 'Enter') {
+                var hits = searchShapes(self.shapes, input.value, 1);
+                if (hits.length) { pick(hits[0]); }
+            }
+        });
+    };
+
+    // ---------- Bloco 6: filtro de visualização por tipo ----------
+
+    /** Mostra/esconde o ÍCONE de um shape conforme o filtro ativo. */
+    App.prototype.applyFilterTo = function (shapeId) {
+        var marker = this.markers[shapeId];
+        var shape = this.shapes[shapeId];
+        if (!marker || !shape) { return; }
+        var el = marker.getElement && marker.getElement();
+        if (el) { el.style.display = shapeMatchesFilter(shape, this.typeFilter) ? '' : 'none'; }
+    };
+
+    /** Reaplica o filtro a TODOS os shapes (troca de filtro no painel). */
+    App.prototype.applyTypeFilter = function () {
+        var self = this;
+        Object.keys(this.markers).forEach(function (sid) { self.applyFilterTo(sid); });
+    };
+
+    /**
+     * Painel vertical de filtro (Todos + cada FILTER_TYPES), controle
+     * Leaflet topleft, seleção exclusiva. Só afeta os ÍCONES dos shapes
+     * — a visibilidade dos CABOS continua pelo sistema do 4d/5
+     * (mode/routeSet/focus/base), sem misturar as duas lógicas.
+     */
+    App.prototype.addFilterControl = function () {
+        var self = this;
+        var Ctl = L.Control.extend({
+            options: { position: 'topleft' },
+            onAdd: function () {
+                var box = L.DomUtil.create('div', 'shopmap-filter-ctl leaflet-bar');
+                L.DomEvent.disableClickPropagation(box);
+
+                var addOpt = function (key, label, icon) {
+                    var a = L.DomUtil.create('a', 'sm-filter-opt' + (key === 'all' ? ' active' : ''), box);
+                    a.href = '#';
+                    a.title = label;
+                    a.innerHTML = '<i class="ti ' + icon + '"></i>';
+                    L.DomEvent.on(a, 'click', function (ev) {
+                        L.DomEvent.stop(ev);
+                        self.typeFilter = key;
+                        box.querySelectorAll('.sm-filter-opt').forEach(function (b) {
+                            b.classList.toggle('active', b === a);
+                        });
+                        self.applyTypeFilter();
+                    });
+                };
+
+                addOpt('all', 'Todos', 'ti-apps');
+                FILTER_TYPES.forEach(function (t) {
+                    var m = TYPE_META[t];
+                    addOpt(t, m.label, m.icon);
+                });
+                // r5: esconder todos os shapes de uma vez (planta limpa)
+                addOpt('none', 'Ocultar todos', 'ti-eye-off');
+
+                return box;
             }
         });
         this.map.addControl(new Ctl());
@@ -1355,6 +1628,19 @@
         var id = parseInt(box.getAttribute('data-shape-id'), 10);
         var picked = null; // ativo escolhido na busca
 
+        // r4: se o popup abriu por busca de item DENTRO do rack, destaca
+        // a linha correspondente na tabela (e rola até ela)
+        if (this.popupHighlight) {
+            var want = this.popupHighlight;
+            this.popupHighlight = '';
+            box.querySelectorAll('.sm-pop-rackitems tr').forEach(function (tr) {
+                if (tr.getAttribute('data-rackitem') === want) {
+                    tr.classList.add('sm-row-hl');
+                    if (tr.scrollIntoView) { tr.scrollIntoView({ block: 'nearest' }); }
+                }
+            });
+        }
+
         var q = function (sel) { return box.querySelector(sel); };
 
         var dosearch = q('.sm-pop-dosearch');
@@ -1490,7 +1776,10 @@
         var unvago = q('.sm-pop-unvago');
         if (unvago) {
             unvago.addEventListener('click', function () {
-                self.post({ action: 'settype', id: id, shapetype: 'equipment' }, function (data) {
+                var typeSel = q('.sm-pop-untype');
+                var target = (typeSel && VAGO_RECOVERY_TYPES.indexOf(typeSel.value) >= 0)
+                    ? typeSel.value : 'equipment';
+                self.post({ action: 'settype', id: id, shapetype: target }, function (data) {
                     if (data.ok && data.shape) {
                         self.refreshMarker(data.shape);
                         self.restyleLinesOf(id);
@@ -1714,6 +2003,12 @@
         _bfsRoute: bfsRoute,
         _routeHopName: routeHopName,
         _routeSummaryHtml: routeSummaryHtml,
+        _shapeMatchesFilter: shapeMatchesFilter,
+        _filterCategory: filterCategory,
+        _isDgo: isDgo,
+        _searchShapes: searchShapes,
+        _searchResultHtml: searchResultHtml,
+        _vagoRecoveryOptionsHtml: vagoRecoveryOptionsHtml,
 
         mount: function (rootId, dataId) {
             var root = document.getElementById(rootId);

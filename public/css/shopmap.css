@@ -67,6 +67,7 @@
 .sm-pop input[type=text] { width: 100%; box-sizing: border-box; padding: 2px 4px; }
 .sm-pop-searchrow { display: flex; gap: 4px; }
 .sm-pop-searchrow input { flex: 1; }
+.sm-pop-searchrow select { flex: 1; padding: 2px 4px; }
 .sm-pop-results { list-style: none; margin: 4px 0; padding: 0; max-height: 110px; overflow-y: auto; }
 .sm-pop-results li { padding: 2px 4px; cursor: pointer; border-radius: 3px; }
 .sm-pop-results li:hover { background: #eef; }
@@ -181,3 +182,40 @@
 
 /* Bloco 4j — potência da fibra */
 .sm-cpop-pwnow { color: #555; padding: 3px 0; font-size: 12px; }
+
+/* Bloco 6 — busca de shape no plano.
+   r4: posição no TOPO do mapa, à direita dos botões de zoom (pedido do
+   usuário) — div absoluta no container, não L.Control (topleft empilha
+   na vertical e jogava a busca pra baixo dos outros botões). */
+.shopmap-search-ctl {
+    position: absolute; top: 10px; left: 52px; z-index: 1000;
+    background: #fff; border-radius: 4px; box-shadow: 0 1px 5px rgba(0,0,0,.4);
+    padding: 3px; width: 200px;
+}
+.shopmap-search-input {
+    width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 3px;
+    padding: 4px 6px; font-size: 12px;
+}
+.shopmap-search-results {
+    list-style: none; margin: 3px 0 0; padding: 0; max-height: 180px; overflow-y: auto;
+}
+.shopmap-search-results li {
+    padding: 3px 5px; cursor: pointer; font-size: 12px; border-radius: 3px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.shopmap-search-results li:hover { background: #eef; }
+.shopmap-search-empty { color: #999; font-style: italic; cursor: default; }
+.shopmap-search-empty:hover { background: none; }
+
+/* Bloco 6 r4 — popup do rack: mais largo + tabela do conteúdo (Item_Rack) */
+.sm-pop-wide { min-width: 320px; }
+.sm-pop-rackitems { margin: 6px 0; border-top: 1px solid #e3e3e3; padding-top: 4px; }
+.sm-pop-rackitems table { width: 100%; border-collapse: collapse; display: block; max-height: 170px; overflow-y: auto; }
+.sm-pop-rackitems td { padding: 2px 6px 2px 0; border-bottom: 1px solid #f0f0f0; }
+.sm-pop-rackitems tr.sm-row-hl td { background: #fff3cd; font-weight: 600; }
+
+/* Bloco 6 — filtro de visualização por tipo (usa o box/hover nativo do
+   .leaflet-bar; só a cor do item ativo é customizada) */
+.shopmap-filter-ctl a { font-size: 14px; }
+.shopmap-filter-ctl a.active,
+.shopmap-filter-ctl a.active:hover { background: #1a6dd8; color: #fff; }

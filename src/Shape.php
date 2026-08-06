@@ -63,6 +63,11 @@ class Shape
                 'asset_url'       => $assetUrl,
                 'dgo_url'         => self::dgoUrl($itemtype, $itemsId, $locationsId),
                 'dgo_ports'       => self::dgoPorts($itemtype, $itemsId),
+                // Bloco 6 r4: conteúdo do contêiner (Item_Rack/Enclosure
+                // nativos, só leitura — EndPoint::contents já existia p/ 4e).
+                // Vai pro popup do rack e entra na busca do plano.
+                'rack_items'      => EndPoint::isContainer($itemtype)
+                    ? EndPoint::contents($itemtype, $itemsId) : [],
             ];
         }
         return $rows;
@@ -252,8 +257,9 @@ class Shape
 
     /**
      * Caminho de volta do vago (Bloco 4f): quando o equipamento novo
-     * chega, o ponto vira equipment/rack/passbox de novo e o ativo é
-     * vinculado normalmente. Só converte A PARTIR de vago.
+     * chega, o ponto vira equipment/rack/passbox/access_point/onu_router
+     * de novo (Bloco 6: os 2 últimos) e o ativo é vinculado normalmente.
+     * Só converte A PARTIR de vago.
      */
     public static function setType(int $id, string $type): bool
     {
@@ -263,7 +269,7 @@ class Shape
         $shape = self::get($id);
         if ($shape === null
             || (string) $shape['shapetype'] !== 'vago'
-            || !in_array($type, ['equipment', 'rack', 'passbox'], true)
+            || !in_array($type, ['equipment', 'rack', 'passbox', 'access_point', 'onu_router'], true)
         ) {
             return false;
         }
