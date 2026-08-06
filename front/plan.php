@@ -47,6 +47,10 @@ $planJson = json_encode([
     'connUrl'   => Url::to('ajax/connection.php'),
     'assetUrl'  => Url::to('ajax/assetsearch.php'),
     'csrf'      => Session::getNewCSRFToken(),
+    // Bloco 4i: paleta fixa + legenda salva da planta
+    'palette'   => \GlpiPlugin\Shopmap\Install::PALETTE,
+    'vagoColor' => \GlpiPlugin\Shopmap\Install::VAGO_COLOR,
+    'legend'    => json_decode((string) ($plan['legend'] ?? ''), true) ?: new \stdClass(),
 ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
 
 // Twig strict: toda variável usada no template listada aqui.

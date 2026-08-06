@@ -152,6 +152,32 @@ class Floorplan
     /**
      * Apaga a planta: linha + arquivo + (futuros) shapes/conexões dela.
      */
+    /**
+     * Legenda da planta (Bloco 4i): JSON {"#RRGGBB": "texto"} — só cores
+     * da paleta, textos até 255. Devolve o mapa salvo.
+     *
+     * @param array<string,string> $legend
+     * @return array<string,string>
+     */
+    public static function setLegend(int $id, array $legend): array
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $clean = [];
+        foreach (Install::PALETTE as $color) {
+            $txt = trim((string) ($legend[$color] ?? ''));
+            if ($txt !== '') {
+                $clean[$color] = mb_substr($txt, 0, 255);
+            }
+        }
+        $DB->update('glpi_plugin_shopmap_floorplans', [
+            'legend'   => json_encode($clean, JSON_UNESCAPED_UNICODE),
+            'date_mod' => date('Y-m-d H:i:s'),
+        ], ['id' => $id]);
+        return $clean;
+    }
+
     public static function purge(int $id): bool
     {
         /** @var \DBmysql $DB */

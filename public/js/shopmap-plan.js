@@ -42,12 +42,64 @@
         vago:      { label: 'Vago (aguardando equipamento)', cls: 'sm-shape-vago', icon: 'ti-circle-dashed' }
     };
 
+    /**
+     * Índice do segmento mais próximo de um ponto (coords de tela).
+     * pts = [{x,y},...] da polilinha; p = {x,y} do clique. Puro p/ teste.
+     * Inserir o vértice novo em editPoints[índice] coloca-o entre as
+     * duas âncoras do segmento clicado (Bloco 4h).
+     */
+    function nearestSegIndex(pts, p) {
+        var best = 0;
+        var bestD = Infinity;
+        for (var i = 0; i < pts.length - 1; i++) {
+            var a = pts[i];
+            var b = pts[i + 1];
+            var dx = b.x - a.x;
+            var dy = b.y - a.y;
+            var l2 = dx * dx + dy * dy;
+            var t = l2 ? ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2 : 0;
+            t = Math.max(0, Math.min(1, t));
+            var d = Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+            if (d < bestD) { bestD = d; best = i; }
+        }
+        return best;
+    }
+
     /** Cabo com ponta em shape Vago desenha TRACEJADO (Bloco 4f). */
     function cableDash(conn, shapes) {
         var a = shapes[conn.shapes_id_a];
         var b = shapes[conn.shapes_id_b];
         return ((a && a.shapetype === 'vago') || (b && b.shapetype === 'vago'))
             ? '10 7' : null;
+    }
+
+    // Bloco 4i: paleta fixa de 5 cores (decisão 06/08); vago é SEMPRE
+    // laranja escuro; cabo sem cor definida ('') desenha VERDE (cru).
+    var PALETTE = ['#008000', '#D20A2E', '#DAA520', '#0000FF', '#898989', '#000000'];
+    var VAGO_COLOR = '#FF7518';
+    var DEFAULT_SHAPE_COLOR = '#D20A2E';
+    var RAW_CABLE_COLOR = '#008000';
+
+    /** Cor efetiva do chip (4i): vago fixo; senão a escolhida; senão padrão. */
+    function shapeColor(shape) {
+        if (shape.shapetype === 'vago') { return VAGO_COLOR; }
+        return PALETTE.indexOf(shape.color) >= 0 ? shape.color : DEFAULT_SHAPE_COLOR;
+    }
+
+    /** Cor efetiva do cabo (4i): '' = cru = verde. */
+    function connColor(conn) {
+        return PALETTE.indexOf(conn.color) >= 0 ? conn.color : RAW_CABLE_COLOR;
+    }
+
+    /** Linha de swatches da paleta (popup). Puro p/ teste. */
+    function swatchRowHtml(cls, current) {
+        var h = '<div class="sm-pop-colors">';
+        PALETTE.forEach(function (c) {
+            h += '<button type="button" class="sm-color-swatch ' + cls +
+                 (current === c ? ' active' : '') + '" data-color="' + c +
+                 '" style="background:' + c + '"></button>';
+        });
+        return h + '</div>';
     }
 
     // Ícone automático pelo TIPO DO ATIVO vinculado (Tabler, já carregado
@@ -72,7 +124,8 @@
         var star = shape.is_route_target ? '<span class="sm-shape-star">\u2605</span>' : '';
         var text = shape.label || shape.asset_name || '';
         return '<div class="sm-shape ' + meta.cls + '">' +
-            '<i class="ti ' + iconClass(shape) + ' sm-shape-glyph"></i>' + star +
+            '<i class="ti ' + iconClass(shape) + ' sm-shape-glyph" style="background:' +
+            shapeColor(shape) + '"></i>' + star +
             (text ? '<span class="sm-shape-label">' + esc(text) + '</span>' : '') +
             '</div>';
     }
@@ -145,6 +198,9 @@
         if (shape.asset_name) {
             h += '<button type="button" class="sm-pop-btn sm-pop-unlink">Desvincular ativo</button>';
         }
+
+        h += '<label class="sm-pop-lbl">Cor do \u00edcone</label>' +
+             swatchRowHtml('sm-shape-color', shapeColor(shape));
 
         h += '<label class="sm-pop-check"><input type="checkbox" class="sm-pop-target"' +
              (shape.is_route_target ? ' checked' : '') + '> Destino da rota (rack/DC)</label>';
@@ -281,6 +337,9 @@
              '<input type="text" class="sm-cpop-strands" value="' + (conn.strand_count > 0 ? conn.strand_count : '') + '"></span>' +
              '</div>';
 
+        h += '<label class="sm-pop-lbl">Cor do cabo (verde = sem defini\u00e7\u00e3o)</label>' +
+             swatchRowHtml('sm-conn-color', connColor(conn));
+
         // Bloco 4e: equipamento dentro do rack (carregado sob demanda)
         if (ends && (ends.a || ends.b)) {
             h += '<div class="sm-cpop-ends"><span class="sm-cpop-eload">' +
@@ -302,6 +361,7 @@
 
         h += '<div class="sm-pop-actions">' +
              '<button type="button" class="sm-pop-btn sm-cpop-save">Salvar</button>' +
+             '<button type="button" class="sm-pop-btn sm-cpop-editpath" title="Mover, inserir ou remover os v\u00e9rtices do caminho">Editar tra\u00e7ado</button>' +
              '<button type="button" class="sm-pop-btn sm-pop-del sm-cpop-del">Excluir cabo</button>' +
              '</div>';
 
@@ -339,6 +399,7 @@
         var fitZoom = map.getZoom();
         map.setMinZoom(fitZoom - 2);
         map.setMaxZoom(fitZoom + 7);
+        map.smFitZoom = fitZoom; // Bloco 4h: base da escala dos chips
 
         var Fullscreen = L.Control.extend({
             options: { position: 'topleft' },
@@ -383,6 +444,7 @@
         this.conns = {};          // conn id -> dados
         this.lines = {};          // conn id -> L.polyline
         this.pendingType = null;  // tipo aguardando clique no mapa
+        this.pendingColor = DEFAULT_SHAPE_COLOR; // 4i: cor do próximo shape
         this.mode = null;         // null | 'draw' | 'quick'
         this.drawStart = 0;       // shape id inicial do desenho
         this.drawPoints = [];     // vertices intermediarios
@@ -395,6 +457,17 @@
         (cfg.connections || []).forEach(function (c) { self.addLine(c); });
         this.addCablesControl();
 
+        // Bloco 4h: o chip tem tamanho fixo em px de tela e "sumia" no
+        // zoom profundo — cresce ~35%/nível acima do enquadramento (teto 2.6x)
+        var applyChipScale = function () {
+            var z = self.map.getZoom();
+            var base = (self.map.smFitZoom !== undefined) ? self.map.smFitZoom : z;
+            var sc = Math.min(1 + Math.max(0, z - base) * 0.35, 2.6);
+            self.map.getContainer().style.setProperty('--sm-chip-scale', sc.toFixed(2));
+        };
+        this.map.on('zoomend', applyChipScale);
+        applyChipScale();
+
         // clique no mapa: sempre ligado (limpar foco vale também no modo
         // leitura); ações de edição são barradas dentro de onMapClick
         this.map.on('click', function (ev) { self.onMapClick(ev); });
@@ -402,11 +475,98 @@
         if (cfg.canUpdate) {
             this.bindToolbar();
             document.addEventListener('keydown', function (ev) {
-                if (ev.key === 'Escape') { self.cancelDraw(); }
+                if (ev.key === 'Escape') {
+                    if (self.mode === 'editpath') { self.endEditPath(false); return; }
+                    self.cancelDraw();
+                }
             });
         }
         this.map.on('popupopen', function (ev) { self.bindPopup(ev); });
+
+        // Bloco 4i: legenda por planta (painel no cabeçalho + caixa no mapa)
+        this.legend = cfg.legend || {};
+        this.bindLegendPanel();
+        this.addLegendBox();
     }
+
+    App.prototype.bindLegendPanel = function () {
+        var self = this;
+        var btn = document.getElementById('shopmap-legend-btn');
+        var panel = document.getElementById('shopmap-legend-panel');
+        if (!btn || !panel) { return; }
+        // preencher com o salvo
+        panel.querySelectorAll('input[data-color]').forEach(function (inp) {
+            inp.value = self.legend[inp.getAttribute('data-color')] || '';
+        });
+        btn.addEventListener('click', function () {
+            panel.classList.toggle('d-none');
+        });
+        var close = document.getElementById('shopmap-legend-close');
+        if (close) {
+            close.addEventListener('click', function () { panel.classList.add('d-none'); });
+        }
+        var save = document.getElementById('shopmap-legend-save');
+        if (save) {
+            if (!this.cfg.canUpdate) { save.classList.add('d-none'); }
+            save.addEventListener('click', function () {
+                var legend = {};
+                panel.querySelectorAll('input[data-color]').forEach(function (inp) {
+                    legend[inp.getAttribute('data-color')] = inp.value;
+                });
+                self.post({
+                    action: 'legend',
+                    floorplans_id: self.cfg.id,
+                    legend: JSON.stringify(legend)
+                }, function (data) {
+                    if (data.ok) {
+                        self.legend = data.legend || {};
+                        self.renderLegendBox();
+                        panel.classList.add('d-none');
+                        self.setHint('Legenda salva.');
+                    } else {
+                        window.alert(data.error || 'falha ao salvar a legenda');
+                    }
+                });
+            });
+        }
+    };
+
+    App.prototype.addLegendBox = function () {
+        var self = this;
+        var Ctl = L.Control.extend({
+            options: { position: 'bottomright' },
+            onAdd: function () {
+                self.legendDiv = L.DomUtil.create('div', 'sm-legend-box');
+                L.DomEvent.disableClickPropagation(self.legendDiv);
+                return self.legendDiv;
+            }
+        });
+        this.map.addControl(new Ctl());
+        this.renderLegendBox();
+    };
+
+    /** Caixa de legenda no mapa: cores com texto + linha fixa do Vago. */
+    App.prototype.renderLegendBox = function () {
+        if (!this.legendDiv) { return; }
+        var self = this;
+        var h = '';
+        PALETTE.forEach(function (c) {
+            var txt = self.legend[c];
+            if (txt) {
+                h += '<div class="sm-legend-item"><span class="sm-legend-dot" style="background:' +
+                     c + '"></span>' + esc(txt) + '</div>';
+            }
+        });
+        var hasVago = Object.keys(this.shapes).some(function (sid) {
+            return self.shapes[sid].shapetype === 'vago';
+        });
+        if (hasVago) {
+            h += '<div class="sm-legend-item"><span class="sm-legend-dot" style="background:' +
+                 VAGO_COLOR + '"></span>Vago (aguardando equipamento)</div>';
+        }
+        this.legendDiv.innerHTML = h;
+        this.legendDiv.style.display = h === '' ? 'none' : '';
+    };
 
     App.prototype.post = function (params, done) {
         var self = this;
@@ -447,6 +607,7 @@
             });
         }
         this.markers[shape.id] = marker;
+        if (this.legendDiv) { this.renderLegendBox(); } // 4i
     };
 
     App.prototype.refreshMarker = function (shape) {
@@ -455,6 +616,7 @@
         if (marker) {
             marker.setIcon(L.divIcon({ className: 'sm-shape-wrap', html: iconHtml(shape), iconSize: null }));
         }
+        this.renderLegendBox(); // 4i: linha do Vago acompanha conversões
     };
 
     App.prototype.shapePos = function (id) {
@@ -473,7 +635,7 @@
         var self = this;
         this.conns[conn.id] = conn;
         var line = L.polyline(this.connLatLngs(conn), {
-            color: cableMeta(conn.cable_type).color,
+            color: connColor(conn),
             weight: 3,
             opacity: 0.9,
             dashArray: cableDash(conn, this.shapes)
@@ -484,6 +646,11 @@
         this.styleLineVis(line, this.lineVisible(conn));
         line.on('click', function (ev) {
             if (ev && ev.originalEvent) { ev.originalEvent.stopPropagation(); }
+            // 4h: editando ESTE cabo, clique na linha insere vértice
+            if (self.mode === 'editpath' && conn.id === self.editConn) {
+                self.insertEditVertex(ev.latlng);
+                return;
+            }
             if (self.mode) { return; } // desenhando: ignora cliques no cabo
             var c = self.conns[conn.id];
             L.popup({ minWidth: 240 })
@@ -500,10 +667,151 @@
         if (line) {
             line.setLatLngs(this.connLatLngs(conn));
             line.setStyle({
-                color: cableMeta(conn.cable_type).color,
+                color: connColor(conn),
                 dashArray: cableDash(conn, this.shapes)
             });
         }
+    };
+
+    // ---------------- Bloco 4h: edição do traçado do cabo ----------------
+    // Botão no popup -> vértices arrastáveis; clique na linha insere no
+    // segmento mais próximo; duplo clique num vértice remove; ✓ salva
+    // (update.points já existente), ✗/Esc cancela restaurando o original.
+
+    App.prototype.startEditPath = function (connId) {
+        var self = this;
+        var conn = this.conns[connId];
+        if (!conn) { return; }
+        if (this.mode) { this.setMode(null); }
+
+        this.mode       = 'editpath';
+        this.editConn   = connId;
+        this.editOrig   = (conn.points || []).map(function (p) { return [p[0], p[1]]; });
+        this.editPoints = (conn.points || []).map(function (p) { return [p[0], p[1]]; });
+        this.editMarkers = [];
+        this.applyCableVis(); // modo força cabos visíveis (4d)
+        this.renderEditVertices();
+
+        var Ctl = L.Control.extend({
+            options: { position: 'topleft' },
+            onAdd: function () {
+                var div = L.DomUtil.create('div', 'leaflet-bar sm-editpath-bar');
+                div.innerHTML =
+                    '<a href="#" class="sm-editpath-save" title="Salvar tra\u00e7ado"><i class="ti ti-check"></i></a>' +
+                    '<a href="#" class="sm-editpath-cancel" title="Cancelar (Esc)"><i class="ti ti-x"></i></a>';
+                L.DomEvent.disableClickPropagation(div);
+                div.querySelector('.sm-editpath-save').addEventListener('click', function (e) {
+                    e.preventDefault();
+                    self.endEditPath(true);
+                });
+                div.querySelector('.sm-editpath-cancel').addEventListener('click', function (e) {
+                    e.preventDefault();
+                    self.endEditPath(false);
+                });
+                return div;
+            }
+        });
+        this.editCtl = new Ctl();
+        this.map.addControl(this.editCtl);
+        this.setHint('Editando tra\u00e7ado: arraste os pontos \u00b7 clique na LINHA para inserir um ponto \u00b7 duplo clique num ponto remove \u00b7 \u2713 salva \u00b7 Esc cancela');
+    };
+
+    App.prototype.applyEditLine = function () {
+        var conn = this.conns[this.editConn];
+        if (!conn) { return; }
+        conn.points = this.editPoints; // preview vivo (cancelar restaura)
+        var line = this.lines[this.editConn];
+        if (line) { line.setLatLngs(this.connLatLngs(conn)); }
+    };
+
+    App.prototype.renderEditVertices = function () {
+        var self = this;
+        (this.editMarkers || []).forEach(function (m) { self.map.removeLayer(m); });
+        this.editMarkers = [];
+        this.editPoints.forEach(function (p, i) {
+            var m = L.marker([p[1], p[0]], {
+                draggable: true,
+                icon: L.divIcon({
+                    className: 'sm-vertex-wrap',
+                    html: '<div class="sm-vertex"></div>',
+                    iconSize: [16, 16],
+                    iconAnchor: [8, 8]
+                })
+            }).addTo(self.map);
+            m.on('drag', function () {
+                var ll = m.getLatLng();
+                self.editPoints[i] = [ll.lng, ll.lat];
+                self.applyEditLine();
+            });
+            m.on('dblclick', function (ev) {
+                if (ev && ev.originalEvent) {
+                    ev.originalEvent.stopPropagation();
+                    ev.originalEvent.preventDefault();
+                }
+                self.editPoints.splice(i, 1);
+                self.applyEditLine();
+                self.renderEditVertices();
+            });
+            self.editMarkers.push(m);
+        });
+    };
+
+    App.prototype.insertEditVertex = function (latlng) {
+        var self = this;
+        var conn = this.conns[this.editConn];
+        if (!conn) { return; }
+        var pts = this.connLatLngs(conn).map(function (ll) {
+            var pt = self.map.latLngToLayerPoint(ll);
+            return { x: pt.x, y: pt.y };
+        });
+        var click = this.map.latLngToLayerPoint(latlng);
+        var idx = nearestSegIndex(pts, { x: click.x, y: click.y });
+        this.editPoints.splice(idx, 0, [latlng.lng, latlng.lat]);
+        this.applyEditLine();
+        this.renderEditVertices();
+    };
+
+    App.prototype.endEditPath = function (save) {
+        var self = this;
+        if (this.mode !== 'editpath') { return; }
+        var id   = this.editConn;
+        var conn = this.conns[id];
+        var orig = this.editOrig || [];
+        var pts  = this.editPoints || [];
+
+        (this.editMarkers || []).forEach(function (m) { self.map.removeLayer(m); });
+        this.editMarkers = [];
+        if (this.editCtl) {
+            this.map.removeControl(this.editCtl);
+            this.editCtl = null;
+        }
+        this.mode = null;
+        this.editConn = 0;
+        this.map.getContainer().style.cursor = '';
+
+        if (!save) {
+            if (conn) {
+                conn.points = orig;
+                this.refreshLine(conn);
+            }
+            this.applyCableVis();
+            this.setHint('Edi\u00e7\u00e3o cancelada \u2014 tra\u00e7ado original restaurado');
+            return;
+        }
+
+        this.postConn({ action: 'update', id: id, points: JSON.stringify(pts) }, function (data) {
+            if (data.ok && data.connection) {
+                self.refreshLine(data.connection);
+                self.setHint('Tra\u00e7ado salvo.');
+            } else {
+                if (conn) {
+                    conn.points = orig;
+                    self.refreshLine(conn);
+                }
+                window.alert(data.error || 'falha ao salvar o tra\u00e7ado');
+            }
+            self.applyCableVis();
+        });
     };
 
     /** Reaplica o tracejado 4f nas linhas de um shape (após conversão). */
@@ -624,7 +932,7 @@
             out.push({
                 other: self.shapeName(otherId) + (otherEff ? ' \u203a ' + otherEff : ''),
                 typeLabel: cableMeta(c.cable_type).label,
-                color: cableMeta(c.cable_type).color,
+                color: connColor(c),
                 label: c.cable_label,
                 length: c.length_m
             });
@@ -662,6 +970,7 @@
     };
 
     App.prototype.setMode = function (mode) {
+        if (this.mode === 'editpath') { this.endEditPath(false); } // 4h
         this.cancelDraw();
         this.mode = mode;
         this.applyCableVis(); // 4d: modo de desenho força cabos visíveis; sair restaura
@@ -691,6 +1000,8 @@
     App.prototype.onShapeClick = function (shapeId) {
         var self = this;
 
+        if (this.mode === 'editpath') { return; } // 4h: shapes ficam quietos
+
         // modo normal: foca os cabos do shape (4d) e abre o popup
         if (!this.mode) {
             this.cableFocus = shapeId;
@@ -713,7 +1024,7 @@
             this.drawStart = shapeId;
             if (this.mode === 'draw') {
                 this.tempLine = L.polyline([this.shapePos(shapeId)], {
-                    color: '#20a06a', weight: 3, dashArray: '6 6'
+                    color: RAW_CABLE_COLOR, weight: 3, dashArray: '6 6'
                 }).addTo(this.map);
                 this.setHint('Origem: ' + this.shapeName(shapeId) +
                     ' \u00b7 clique na planta para tra\u00e7ar o caminho \u00b7 clique no shape de DESTINO para finalizar \u00b7 Esc cancela');
@@ -773,6 +1084,16 @@
         var bar = document.getElementById('shopmap-toolbar');
         if (!bar) { return; }
         bar.classList.remove('d-none');
+        // 4i: seletor de cor do próximo shape
+        bar.querySelectorAll('#shopmap-colorpick .sm-color-swatch').forEach(function (sw) {
+            sw.addEventListener('click', function () {
+                self.pendingColor = sw.getAttribute('data-color');
+                bar.querySelectorAll('#shopmap-colorpick .sm-color-swatch').forEach(function (b) {
+                    b.classList.toggle('active', b === sw);
+                });
+            });
+        });
+
         bar.querySelectorAll('[data-shapetype]').forEach(function (btn) {
             btn.addEventListener('click', function () {
                 self.setMode(null);
@@ -810,6 +1131,7 @@
 
         // daqui para baixo é tudo edição
         if (!this.cfg.canUpdate) { return; }
+        if (this.mode === 'editpath') { return; } // 4h: inserir é no clique da LINHA
 
         // modo de conexão SEM origem: clique perto de um shape conta
         // como clique nele; longe de todos, avisa em vez de silenciar
@@ -847,6 +1169,7 @@
             action: 'create',
             floorplans_id: this.cfg.id,
             shapetype: type,
+            color: this.pendingColor,
             x: ev.latlng.lng,
             y: ev.latlng.lat
         }, function (data) {
@@ -898,15 +1221,28 @@
             });
         }
 
+        // 4i: seleção de cor no popup do shape
+        box.querySelectorAll('.sm-shape-color').forEach(function (sw) {
+            sw.addEventListener('click', function () {
+                box.querySelectorAll('.sm-shape-color').forEach(function (b) {
+                    b.classList.toggle('active', b === sw);
+                });
+            });
+        });
+
         var save = q('.sm-pop-save');
         if (save) {
             save.addEventListener('click', function () {
                 var params = {
                     action: 'update',
                     id: id,
-                    label: q('.sm-pop-label').value,
-                    is_route_target: q('.sm-pop-target').checked ? 1 : 0
+                    label: q('.sm-pop-label').value
                 };
+                var swsel = box.querySelector('.sm-shape-color.active');
+                if (swsel) { params.color = swsel.getAttribute('data-color'); }
+                // vago não tem o checkbox de destino (4f) — só envia se existir
+                var tgt = q('.sm-pop-target');
+                if (tgt) { params.is_route_target = tgt.checked ? 1 : 0; }
                 if (picked) {
                     params.itemtype = picked.itemtype;
                     params.items_id = picked.id;
@@ -999,6 +1335,15 @@
         var id = parseInt(box.getAttribute('data-conn-id'), 10);
         var q = function (sel) { return box.querySelector(sel); };
 
+        // 4i: seleção de cor do cabo
+        box.querySelectorAll('.sm-conn-color').forEach(function (sw) {
+            sw.addEventListener('click', function () {
+                box.querySelectorAll('.sm-conn-color').forEach(function (b) {
+                    b.classList.toggle('active', b === sw);
+                });
+            });
+        });
+
         // ---- Bloco 4e: equipamento dentro do rack ----
         var endsBox = q('.sm-cpop-ends');
         if (endsBox) {
@@ -1025,6 +1370,8 @@
                     length_m: q('.sm-cpop-length').value || 0,
                     strand_count: q('.sm-cpop-strands').value || 0
                 };
+                var csw = box.querySelector('.sm-conn-color.active');
+                if (csw) { params.color = csw.getAttribute('data-color'); }
                 // Bloco 4e: pontas escolhidas (apenas selects renderizados)
                 box.querySelectorAll('.sm-cpop-esel').forEach(function (sel) {
                     var side = sel.getAttribute('data-side');
@@ -1116,6 +1463,14 @@
             });
         }
 
+        var editpath = q('.sm-cpop-editpath');
+        if (editpath) {
+            editpath.addEventListener('click', function () {
+                self.map.closePopup();
+                self.startEditPath(id);
+            });
+        }
+
         var del = q('.sm-cpop-del');
         if (del) {
             del.addEventListener('click', function () {
@@ -1140,6 +1495,10 @@
         _portFormHtml: portFormHtml,
         _endsFormHtml: endsFormHtml,
         _cableDash: cableDash,
+        _shapeColor: shapeColor,
+        _connColor: connColor,
+        _swatchRowHtml: swatchRowHtml,
+        _nearestSegIndex: nearestSegIndex,
         _shapePopupHtml: popupHtml,
         _connPopupHtml: connPopupHtml,
         _iconClass: iconClass,

@@ -29,22 +29,30 @@
 /* Shapes na planta (Bloco 3) */
 .sm-shape-wrap { background: none; border: none; }
 .sm-shape {
-    display: flex; align-items: center; gap: 2px;
-    transform: translate(-8px, -8px); /* centra o glifo no ponto */
+    display: flex; align-items: center; gap: 3px;
+    /* Bloco 4h: chip 26px centrado no ponto + escala com o zoom
+       (origem no centro do chip mantém o ponto ancorado ao escalar) */
+    transform: translate(-13px, -13px) scale(var(--sm-chip-scale, 1));
+    transform-origin: 13px 13px;
     white-space: nowrap; cursor: pointer;
     /* área de clique generosa sem mudar o visual (correção 4-2) */
     padding: 8px; margin: -8px;
     user-select: none;
 }
-.sm-shape-glyph { font-size: 18px; line-height: 18px; text-shadow: 0 0 3px #fff, 0 0 3px #fff; }
+/* Bloco 4h: chip chapado (decisão do usuário) — quadrado de cantos
+   arredondados na cor do tipo, ícone BRANCO dentro, sombra leve */
+.sm-shape-glyph {
+    font-size: 15px; line-height: 1; color: #fff; text-shadow: none;
+    width: 26px; height: 26px; box-sizing: border-box;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 7px; box-shadow: 0 1px 4px rgba(0,0,0,.4);
+    /* 4i: o background vem INLINE do JS (paleta de 5 cores; vago fixo) */
+    background: #D20A2E;
+}
 .sm-shape i.sm-shape-glyph { font-style: normal; }
-.sm-shape-equipment .sm-shape-glyph { color: #1a6dd8; }
-.sm-shape-rack .sm-shape-glyph { color: #b8860b; }
-.sm-shape-passbox .sm-shape-glyph { color: #666; }
 .sm-shape-star { color: #b8860b; font-size: 12px; text-shadow: 0 0 3px #fff; }
-/* Bloco 4f — ponto vago (fibra aguardando equipamento) */
-.sm-shape-vago .sm-shape-glyph { color: #8a8a8a; }
-.sm-shape-vago .sm-shape-label { color: #8a8a8a; font-style: italic; }
+/* Bloco 4f/4i — vago: chip laranja fixo (#FF7518, inline via JS) */
+.sm-shape-vago .sm-shape-label { color: #b45309; font-style: italic; }
 .sm-pop-vago-hint { color: #8a8a8a; margin: 6px 0; }
 .sm-shape-label {
     font-size: 11px; background: rgba(255,255,255,.85);
@@ -119,3 +127,45 @@
 .sm-pop-links li { padding: 1px 0; }
 .sm-pop-muted-txt { color: #888; }
 .sm-link-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:4px; }
+
+/* Bloco 4h — edição do traçado do cabo */
+.sm-vertex-wrap { background: none; border: none; }
+.sm-vertex {
+    width: 16px; height: 16px; border-radius: 50%;
+    background: #fff; border: 4px solid #20a06a;
+    box-sizing: border-box; box-shadow: 0 1px 3px rgba(0,0,0,.4);
+    cursor: move;
+}
+.sm-editpath-bar a { display: block; width: 30px; height: 30px; line-height: 30px; text-align: center; }
+.sm-editpath-save i { color: #1a7f4e; }
+.sm-editpath-cancel i { color: #b02a37; }
+
+/* Bloco 4i — paleta de cores e legenda */
+.sm-color-swatch {
+    width: 20px; height: 20px; border-radius: 50%;
+    border: 2px solid #fff; box-shadow: 0 0 0 1px #bbb;
+    padding: 0; cursor: pointer; vertical-align: middle;
+}
+.sm-color-swatch.active { box-shadow: 0 0 0 2px #222; }
+.sm-colorpick { display: inline-flex; gap: 5px; align-items: center; }
+.sm-pop-colors { display: flex; gap: 6px; margin: 4px 0 6px; }
+
+#shopmap-legend-panel {
+    position: absolute; right: 16px; z-index: 1100;
+    background: #fff; border: 1px solid #ccc; border-radius: 8px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.18);
+    padding: 10px; margin-top: 6px; width: 290px; text-align: left;
+}
+.sm-legend-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.sm-legend-row input { flex: 1; padding: 3px 6px; }
+.sm-legend-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+.sm-legend-dot {
+    width: 14px; height: 14px; border-radius: 50%;
+    display: inline-block; flex: none; box-shadow: 0 0 0 1px #bbb inset;
+}
+.sm-legend-box {
+    background: rgba(255,255,255,.92); border-radius: 6px;
+    box-shadow: 0 1px 5px rgba(0,0,0,.3); padding: 6px 10px;
+    font-size: 12px; max-width: 260px;
+}
+.sm-legend-item { display: flex; align-items: center; gap: 6px; margin: 2px 0; }

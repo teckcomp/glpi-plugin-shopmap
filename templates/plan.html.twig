@@ -13,6 +13,21 @@
         </h3>
         <div class="text-muted small">
             Zoom: roda do mouse / pinça &middot; Tela cheia: botão no mapa
+            <button type="button" class="btn btn-outline-secondary btn-sm ms-2" id="shopmap-legend-btn">
+                <i class="ti ti-list-details me-1"></i>Legenda
+            </button>
+            <div id="shopmap-legend-panel" class="d-none">
+                <div class="sm-legend-row"><span class="sm-legend-dot" style="background:#008000"></span><input type="text" maxlength="255" data-color="#008000" placeholder="significado do verde"></div>
+                <div class="sm-legend-row"><span class="sm-legend-dot" style="background:#D20A2E"></span><input type="text" maxlength="255" data-color="#D20A2E" placeholder="significado do vermelho"></div>
+                <div class="sm-legend-row"><span class="sm-legend-dot" style="background:#DAA520"></span><input type="text" maxlength="255" data-color="#DAA520" placeholder="significado do dourado"></div>
+                <div class="sm-legend-row"><span class="sm-legend-dot" style="background:#0000FF"></span><input type="text" maxlength="255" data-color="#0000FF" placeholder="significado do azul"></div>
+                <div class="sm-legend-row"><span class="sm-legend-dot" style="background:#898989"></span><input type="text" maxlength="255" data-color="#898989" placeholder="significado do cinza"></div>
+                <div class="sm-legend-row"><span class="sm-legend-dot" style="background:#000000"></span><input type="text" maxlength="255" data-color="#000000" placeholder="significado do preto"></div>
+                <div class="sm-legend-actions">
+                    <button type="button" class="btn btn-sm btn-primary" id="shopmap-legend-save">Salvar</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="shopmap-legend-close">Fechar</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -32,6 +47,14 @@
                 title="Ponto de espera: fibra lançada aguardando equipamento">
             <i class="ti ti-circle-dashed me-1"></i>Vago
         </button>
+        <span class="sm-colorpick ms-2" id="shopmap-colorpick" title="Cor do próximo shape">
+            <button type="button" class="sm-color-swatch" data-color="#008000" style="background:#008000"></button>
+            <button type="button" class="sm-color-swatch active" data-color="#D20A2E" style="background:#D20A2E"></button>
+            <button type="button" class="sm-color-swatch" data-color="#DAA520" style="background:#DAA520"></button>
+            <button type="button" class="sm-color-swatch" data-color="#0000FF" style="background:#0000FF"></button>
+            <button type="button" class="sm-color-swatch" data-color="#898989" style="background:#898989"></button>
+            <button type="button" class="sm-color-swatch" data-color="#000000" style="background:#000000"></button>
+        </span>
         <span class="mx-2 text-muted">|</span>
         <button type="button" class="btn btn-outline-warning btn-sm" id="shopmap-draw-cable">
             <i class="ti ti-route me-1"></i>Desenhar cabo

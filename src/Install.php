@@ -70,6 +70,19 @@ class Install
      */
     public const SHAPE_TYPES = ['equipment', 'rack', 'passbox', 'vago', 'area'];
 
+    /**
+     * Paleta fixa de 6 cores (decisões 06/08/2026: +preto; amarelo→dourado) — chips e
+     * cabos escolhem UMA delas; desenho interno sempre branco.
+     * Verde também é o estado "cru" do cabo (sem cor definida).
+     */
+    public const PALETTE = ['#008000', '#D20A2E', '#DAA520', '#0000FF', '#898989', '#000000'];
+
+    /** Vago é SEMPRE laranja escuro (fora da paleta, fixo). */
+    public const VAGO_COLOR = '#FF7518';
+
+    /** Cor padrão de shape (existentes migram para ela). */
+    public const DEFAULT_SHAPE_COLOR = '#D20A2E';
+
     public static function install(): bool
     {
         /** @var \DBmysql $DB */
@@ -239,6 +252,53 @@ class Install
             'after' => 'porttype_a',
         ]);
         $migration->migrationOneTable($connTable);
+
+        // ------------------------------------------------------------------
+        // Migração Bloco 4i — ALTER consolidado nº 2 (decisões 06/08/2026):
+        //  - shapes.color: cor do chip (paleta de 5; vago ignora — fixo);
+        //  - connections.color: cor do cabo ('' = cru → verde no front);
+        //  - connections.power_ref_dbm / power_now_dbm / power_now_date:
+        //    potência da fibra — inicial editável, atual preenchida pelo
+        //    monitoramento (Fase 5 / scanner via API) — Bloco 4j;
+        //  - floorplans.legend: JSON {cor: texto} da legenda por planta.
+        // ------------------------------------------------------------------
+        $migration->addField('glpi_plugin_shopmap_shapes', 'color', "VARCHAR(7) NOT NULL DEFAULT '" . self::DEFAULT_SHAPE_COLOR . "'", [
+            'after'   => 'label',
+            'comment' => 'cor do chip (paleta fixa)',
+        ]);
+        $migration->migrationOneTable('glpi_plugin_shopmap_shapes');
+
+        $connColorAdded = $migration->addField($connTable, 'color', "VARCHAR(7) NOT NULL DEFAULT ''", [
+            'after'   => 'cable_type',
+            'comment' => 'cor do cabo; vazio = sem definicao (verde)',
+        ]);
+        $migration->addField($connTable, 'power_ref_dbm', "DECIMAL(6,2) DEFAULT NULL", [
+            'after'   => 'strand_count',
+            'comment' => 'potencia inicial da fibra (dBm, as built)',
+        ]);
+        $migration->addField($connTable, 'power_now_dbm', "DECIMAL(6,2) DEFAULT NULL", [
+            'after' => 'power_ref_dbm',
+            'comment' => 'potencia atual (dBm) - preenchida pelo monitoramento',
+        ]);
+        $migration->addField($connTable, 'power_now_date', "TIMESTAMP NULL DEFAULT NULL", [
+            'after' => 'power_now_dbm',
+        ]);
+        $migration->migrationOneTable($connTable);
+
+        $migration->addField('glpi_plugin_shopmap_floorplans', 'legend', "TEXT DEFAULT NULL", [
+            'comment' => 'legenda por planta: JSON {"#RRGGBB":"texto"}',
+        ]);
+        $migration->migrationOneTable('glpi_plugin_shopmap_floorplans');
+
+        // Uma única vez (na criação da coluna): cabos EXISTENTES herdam a
+        // cor mais próxima da paleta pelo tipo, para nada mudar de cara
+        // (decisão 06/08). Novos cabos nascem '' (verde cru).
+        if ($connColorAdded) {
+            $DB->update($connTable, ['color' => '#DAA520'], ['cable_type' => 'fiber_sm']);
+            $DB->update($connTable, ['color' => '#DAA520'], ['cable_type' => 'fiber_mm']);
+            $DB->update($connTable, ['color' => '#0000FF'], ['cable_type' => 'utp']);
+            $DB->update($connTable, ['color' => '#898989'], ['cable_type' => 'other']);
+        }
 
         $migration->executeMigration();
 

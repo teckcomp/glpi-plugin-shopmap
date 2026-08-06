@@ -55,6 +55,8 @@ class Shape
                 'x'               => (float) ($geom['x'] ?? 0),
                 'y'               => (float) ($geom['y'] ?? 0),
                 'is_route_target' => (int) ($row['is_route_target'] ?? 0),
+                'color'           => in_array((string) ($row['color'] ?? ''), Install::PALETTE, true)
+                    ? (string) $row['color'] : Install::DEFAULT_SHAPE_COLOR,
                 'itemtype'        => (string) ($row['itemtype'] ?? ''),
                 'items_id'        => (int) ($row['items_id'] ?? 0),
                 'asset_name'      => $assetName,
@@ -88,7 +90,7 @@ class Shape
     /**
      * Cria um shape pontual. Devolve o id (0 em falha).
      */
-    public static function create(int $planId, string $shapetype, float $x, float $y): int
+    public static function create(int $planId, string $shapetype, float $x, float $y, string $color = ''): int
     {
         /** @var \DBmysql $DB */
         global $DB;
@@ -97,12 +99,16 @@ class Shape
             // 'area' (polígono) entra com o Leaflet.draw em fase futura
             return 0;
         }
+        if (!in_array($color, Install::PALETTE, true)) {
+            $color = Install::DEFAULT_SHAPE_COLOR; // 4i: paleta fixa
+        }
 
         $now = date('Y-m-d H:i:s');
         $ok  = $DB->insert('glpi_plugin_shopmap_shapes', [
             'plugin_shopmap_floorplans_id' => $planId,
             'shapetype'                    => $shapetype,
             'label'                        => '',
+            'color'                        => $color,
             'geometry'                     => json_encode(['kind' => 'point', 'x' => $x, 'y' => $y]),
             'is_route_target'              => 0,
             'date_creation'                => $now,
@@ -142,6 +148,14 @@ class Shape
 
         if (array_key_exists('label', $fields)) {
             $upd['label'] = mb_substr(trim((string) $fields['label']), 0, 255);
+        }
+
+        // Bloco 4i: cor do chip (paleta fixa; vago ignora — cor fixa no front)
+        if (array_key_exists('color', $fields)) {
+            $color = (string) $fields['color'];
+            if (in_array($color, Install::PALETTE, true)) {
+                $upd['color'] = $color;
+            }
         }
 
         if (array_key_exists('itemtype', $fields) && array_key_exists('items_id', $fields)) {

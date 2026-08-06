@@ -69,7 +69,8 @@ switch ($action) {
             $planId,
             (string) ($_POST['shapetype'] ?? ''),
             (float) ($_POST['x'] ?? 0),
-            (float) ($_POST['y'] ?? 0)
+            (float) ($_POST['y'] ?? 0),
+            (string) ($_POST['color'] ?? '')
         );
         if ($id <= 0) {
             sm_reply(['ok' => false, 'error' => 'tipo de shape inválido'], 400);
@@ -102,6 +103,9 @@ switch ($action) {
         if (isset($_POST['is_route_target'])) {
             $fields['is_route_target'] = (int) $_POST['is_route_target'];
         }
+        if (isset($_POST['color'])) {
+            $fields['color'] = (string) $_POST['color'];
+        }
         $ok = Shape::update((int) $shape['id'], $fields);
         // devolve o shape atualizado (com nome/URL do ativo resolvidos)
         $updated = null;
@@ -116,6 +120,19 @@ switch ($action) {
     case 'delete':
         $shape = sm_shape_checked((int) ($_POST['id'] ?? 0));
         sm_reply(['ok' => Shape::delete((int) $shape['id'])]);
+        // no break
+
+    // Bloco 4i: legenda da planta (JSON {"#RRGGBB":"texto"})
+    case 'legend':
+        $planId = (int) ($_POST['floorplans_id'] ?? 0);
+        if ($planId <= 0 || Floorplan::getById($planId) === null) {
+            sm_reply(['ok' => false, 'error' => 'planta não encontrada'], 404);
+        }
+        $legend = json_decode((string) ($_POST['legend'] ?? ''), true);
+        if (!is_array($legend)) {
+            sm_reply(['ok' => false, 'error' => 'legenda inválida'], 400);
+        }
+        sm_reply(['ok' => true, 'legend' => Floorplan::setLegend($planId, $legend)]);
         // no break
 
     // Bloco 4f: converter em Vago (preserva cabos; desfaz registro de

@@ -103,6 +103,10 @@ switch ($action) {
         if (isset($_POST['strand_count'])) {
             $fields['strand_count'] = (int) $_POST['strand_count'];
         }
+        if (isset($_POST['color'])) {
+            // 4i r2: faltava repassar (validação na Connection::update)
+            $fields['color'] = (string) $_POST['color'];
+        }
         if (isset($_POST['points'])) {
             $points = Connection::sanitizePoints($_POST['points']);
             if ($points === null) {

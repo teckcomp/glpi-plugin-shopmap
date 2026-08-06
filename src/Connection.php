@@ -57,6 +57,7 @@ class Connection
                 'cable_label'  => (string) ($row['cable_label'] ?? ''),
                 'length_m'     => (float) ($row['length_m'] ?? 0),
                 'strand_count' => (int) ($row['strand_count'] ?? 0),
+                'color'        => (string) ($row['color'] ?? ''),
                 'comment'      => (string) ($row['comment'] ?? ''),
                 // Bloco 4c: o front usa só a flag "registrado ou não"
                 'networkports_id_a' => (int) ($row['networkports_id_a'] ?? 0),
@@ -197,6 +198,14 @@ class Connection
         }
         if (array_key_exists('points', $fields)) {
             $upd['path'] = json_encode(['points' => $fields['points']]);
+        }
+
+        // Bloco 4i: cor do cabo — '' (cru/verde) ou uma da paleta
+        if (array_key_exists('color', $fields)) {
+            $color = (string) $fields['color'];
+            if ($color === '' || in_array($color, Install::PALETTE, true)) {
+                $upd['color'] = $color;
+            }
         }
 
         // Bloco 4e: item efetivo por lado (validação em EndPoint, no AJAX)
