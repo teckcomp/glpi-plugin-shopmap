@@ -1618,9 +1618,11 @@
         // da planta confundia — parecia que o arquivo sairia minúsculo)
         var out = scaleForExport(rect.w, rect.h, 1800);
         panel.innerHTML =
-            '<span class="sm-clip-info">PNG de ' + out.canvasW + ' \u00d7 ' + out.canvasH + ' px</span>' +
+            '<span class="sm-clip-info">' + out.canvasW + ' \u00d7 ' + out.canvasH + ' px</span>' +
             '<button type="button" class="btn btn-primary btn-sm sm-clip-export">' +
             '<i class="ti ti-download me-1"></i>Exportar PNG</button>' +
+            '<button type="button" class="btn btn-primary btn-sm sm-clip-export-pdf">' +
+            '<i class="ti ti-file-type-pdf me-1"></i>Exportar PDF</button>' +
             '<button type="button" class="btn btn-outline-secondary btn-sm sm-clip-redo">Selecionar de novo</button>' +
             '<button type="button" class="btn btn-outline-secondary btn-sm sm-clip-cancel">Cancelar</button>';
         L.DomEvent.disableClickPropagation(panel);
@@ -1629,6 +1631,10 @@
 
         panel.querySelector('.sm-clip-export').addEventListener('click', function () {
             self.exportPng(rect);
+        });
+        // 7b: PDF gerado no servidor (Pillow) a partir do MESMO desenho
+        panel.querySelector('.sm-clip-export-pdf').addEventListener('click', function () {
+            self.exportPdf(rect);
         });
         panel.querySelector('.sm-clip-redo').addEventListener('click', function () {
             if (self.clipRectLayer) { self.map.removeLayer(self.clipRectLayer); self.clipRectLayer = null; }
@@ -1645,16 +1651,12 @@
     };
 
     /**
-     * Gera o PNG do retângulo selecionado e dispara o download no
-     * navegador. Redesenha a partir dos DADOS (planta rasterizada +
-     * cabos atualmente visíveis + shapes filtrados + legenda), não
-     * captura a tela — evita depender de ícones HTML em canvas.
-     * Bloco 7a: só download local, sem servidor. O histórico e o PDF
-     * entram no Bloco 7b reaproveitando este mesmo desenho.
+     * Desenha o recorte num canvas e entrega via done(canvas). Redesenha
+     * a partir dos DADOS (planta + cabos visíveis + shapes filtrados +
+     * legenda), não captura a tela. Base comum do PNG (7a) e do PDF (7b).
      */
-    App.prototype.exportPng = function (rect) {
+    App.prototype.renderExport = function (rect, done) {
         var self = this;
-        this.setHint('Gerando PNG\u2026');
 
         // r3: `srcMode` = 'crop' quando srcImg JÁ É o recorte no tamanho
         // final (SVG com viewBox editado — ver start()); 'full' quando é
@@ -1767,19 +1769,7 @@
                 });
             }
 
-            canvas.toBlob(function (blob) {
-                if (!blob) { self.setHint('Falha ao gerar o PNG.'); return; }
-                var url = URL.createObjectURL(blob);
-                var a = document.createElement('a');
-                a.href = url;
-                a.download = exportFilename(self.cfg.name, new Date(), 'png');
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
-                self.setHint('PNG exportado.');
-                self.exitClipMode();
-            }, 'image/png');
+            done(canvas);
         };
 
         // r3: SVG → recorta DENTRO do próprio SVG via viewBox, com
@@ -1830,6 +1820,78 @@
 
         var img = this.planOverlay && this.planOverlay.getElement();
         if (img && !img.complete) { img.addEventListener('load', start, { once: true }); } else { start(); }
+    };
+
+    /** Dispara o download de um Blob com o nome dado (comum a PNG e PDF). */
+    App.prototype.downloadBlob = function (blob, filename) {
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    };
+
+    /** 7a — exportação PNG: 100% local, não registra no histórico. */
+    App.prototype.exportPng = function (rect) {
+        var self = this;
+        this.setHint('Gerando PNG\u2026');
+        this.renderExport(rect, function (canvas) {
+            canvas.toBlob(function (blob) {
+                if (!blob) { self.setHint('Falha ao gerar o PNG.'); return; }
+                self.downloadBlob(blob, exportFilename(self.cfg.name, new Date(), 'png'));
+                self.setHint('PNG exportado.');
+                self.exitClipMode();
+            }, 'image/png');
+        });
+    };
+
+    /**
+     * 7b — exportação PDF: o MESMO desenho do PNG vai ao servidor, que
+     * embrulha em A4 paisagem com cabeçalho (Pillow) e registra no
+     * histórico. Resposta em JSON (pdf em base64) para rotacionar o
+     * token CSRF no padrão dos demais endpoints.
+     */
+    App.prototype.exportPdf = function (rect) {
+        var self = this;
+        this.setHint('Gerando PDF\u2026');
+        var btn = this.clipPanel ? this.clipPanel.querySelector('.sm-clip-export-pdf') : null;
+        if (btn) { btn.disabled = true; }
+        this.renderExport(rect, function (canvas) {
+            var params = {
+                action: 'pdf',
+                floorplans_id: self.cfg.id,
+                filename: exportFilename(self.cfg.name, new Date(), 'pdf'),
+                image: canvas.toDataURL('image/png'),
+                _glpi_csrf_token: self.csrf
+            };
+            var body = Object.keys(params).map(function (k) {
+                return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+            }).join('&');
+            fetch(self.cfg.exportUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body
+            }).then(function (r) { return r.json(); }).then(function (data) {
+                if (data && data.csrf) { self.csrf = data.csrf; }
+                if (btn) { btn.disabled = false; }
+                if (!data || !data.ok || !data.pdf) {
+                    self.setHint('Falha ao gerar o PDF' + (data && data.error ? ': ' + data.error : '.'));
+                    return;
+                }
+                var bin = atob(data.pdf);
+                var bytes = new Uint8Array(bin.length);
+                for (var i = 0; i < bin.length; i++) { bytes[i] = bin.charCodeAt(i); }
+                self.downloadBlob(new Blob([bytes], { type: 'application/pdf' }), data.filename);
+                self.setHint('PDF exportado.');
+                self.exitClipMode();
+            }).catch(function () {
+                if (btn) { btn.disabled = false; }
+                self.setHint('Falha de rede ao gerar o PDF.');
+            });
+        });
     };
 
     /**

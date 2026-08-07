@@ -96,4 +96,39 @@
         </div>
     {% endif %}
 
+    {# Bloco 7b — histórico de exportações PDF (log simples; só PDF
+       registra — o PNG é gerado 100% no navegador). Sem re-download:
+       o arquivo não fica no servidor, a linha é o registro. #}
+    {% if sm.export_count > 0 %}
+        <div class="card mt-4">
+            <div class="card-header">
+                <h4 class="card-title mb-0">
+                    <i class="ti ti-file-type-pdf me-1"></i>Exportações recentes (PDF)
+                </h4>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-striped mb-0">
+                    <thead>
+                        <tr>
+                            <th>Planta</th>
+                            <th>Usuário</th>
+                            <th>Arquivo</th>
+                            <th>Data</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for exp in sm.exports %}
+                            <tr>
+                                <td>{{ exp.plan_name }}</td>
+                                <td>{{ exp.user_display }}</td>
+                                <td><code>{{ exp.filename }}</code></td>
+                                <td>{{ exp.date_creation }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    {% endif %}
+
 </div>

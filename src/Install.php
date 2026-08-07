@@ -44,6 +44,7 @@ class Install
         'glpi_plugin_shopmap_floorplans',
         'glpi_plugin_shopmap_shapes',
         'glpi_plugin_shopmap_connections',
+        'glpi_plugin_shopmap_exports',
     ];
 
     /**
@@ -293,6 +294,31 @@ class Install
             'comment' => 'legenda por planta: JSON {"#RRGGBB":"texto"}',
         ]);
         $migration->migrationOneTable('glpi_plugin_shopmap_floorplans');
+
+        // ------------------------------------------------------------------
+        // Migração Bloco 7b — histórico de exportações (log simples).
+        //
+        // Decisões do usuário (06/08/2026): só a exportação PDF registra
+        // (PNG é 100% local no navegador); exibição no dashboard, todas
+        // as plantas juntas; SEM re-download — o PDF não fica no servidor,
+        // aqui é apenas o registro (quem, quando, arquivo). Por isso não
+        // há coluna de caminho, só o nome do arquivo entregue.
+        // ------------------------------------------------------------------
+        if (!$DB->tableExists('glpi_plugin_shopmap_exports')) {
+            $DB->doQuery("
+                CREATE TABLE `glpi_plugin_shopmap_exports` (
+                    `id`                            INT {$sign} NOT NULL AUTO_INCREMENT,
+                    `plugin_shopmap_floorplans_id`  INT {$sign} NOT NULL DEFAULT 0,
+                    `users_id`                      INT {$sign} NOT NULL DEFAULT 0,
+                    `filename`                      VARCHAR(255) NOT NULL DEFAULT '',
+                    `date_creation`                 TIMESTAMP NULL DEFAULT NULL,
+                    PRIMARY KEY (`id`),
+                    KEY `floorplan` (`plugin_shopmap_floorplans_id`),
+                    KEY `date_creation` (`date_creation`)
+                ) ENGINE=InnoDB DEFAULT CHARSET={$charset} COLLATE={$collation}
+            ");
+        }
+
 
         // Uma única vez (na criação da coluna): cabos EXISTENTES herdam a
         // cor mais próxima da paleta pelo tipo, para nada mudar de cara

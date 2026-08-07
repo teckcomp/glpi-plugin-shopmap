@@ -46,6 +46,7 @@ $planJson = json_encode([
     'shapeUrl'  => Url::to('ajax/shape.php'),
     'connUrl'   => Url::to('ajax/connection.php'),
     'assetUrl'  => Url::to('ajax/assetsearch.php'),
+    'exportUrl' => Url::to('ajax/export.php'),
     'csrf'      => Session::getNewCSRFToken(),
     // Bloco 4i: paleta fixa + legenda salva da planta
     'palette'   => \GlpiPlugin\Shopmap\Install::PALETTE,
