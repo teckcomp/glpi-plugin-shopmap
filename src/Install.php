@@ -48,19 +48,26 @@ class Install
     ];
 
     /**
-     * Direitos próprios do plugin.
-     *
-     * Bloco 1: um direito único (`plugin_shopmap`). Bloco 8a (Fase 4):
-     * matriz granular por módulo, exibida na aba "ShopMap" do Perfil
-     * (src/Profile.php). O direito antigo permanece como a linha
-     * "Painel (plantas)" — não é reaproveitamento de direito do CORE
-     * (que não separaria papéis), é o direito próprio do plugin que já
-     * existia, agora com um papel mais estreito.
-     *
-     * A ordem aqui espelha a ordem da matriz em Profile::getAllRights().
+     * Direitos do plugin — Bloco 8b (decisão 08/08/2026, modelo DGO+):
+     * volta a existir UM direito só, `plugin_shopmap`, com os quatro
+     * bits padrão (Ler/Atualizar/Criar/Deletar), configurado na aba
+     * "ShopMap" do Perfil (src/Profile.php). A granularidade de 9
+     * direitos do Bloco 8a foi descartada por engessar a operação.
      */
     public const RIGHTS = [
         'plugin_shopmap',
+    ];
+
+    /**
+     * Direitos APOSENTADOS — os 8 granulares criados pelo Bloco 8a.
+     * A atualização absorve o que houver neles de volta no direito
+     * único (só eleva) e depois APAGA as linhas de glpi_profilerights
+     * (ver absorbRetiredRights()). Manter a lista permite reexecutar o
+     * install sem efeito colateral: sem linhas, nada a absorver.
+     *
+     * @var array<int,string>
+     */
+    public const RETIRED_RIGHTS = [
         'plugin_shopmap_floorplans',
         'plugin_shopmap_shapes',
         'plugin_shopmap_connections',
@@ -69,46 +76,6 @@ class Install
         'plugin_shopmap_export_pdf',
         'plugin_shopmap_exportlog',
         'plugin_shopmap_netport',
-    ];
-
-    /**
-     * Tradução do direito ÚNICO antigo (`plugin_shopmap`) para os
-     * granulares, bit a bit — usada uma única vez por perfil na
-     * atualização (ver migrateLegacyRight()).
-     *
-     * READ do antigo vira "Ver" em tudo; UPDATE vira "Interagir" nos
-     * módulos editáveis + o registro em NetworkPort; CREATE e DELETE
-     * viram as colunas correspondentes. Assim ninguém perde acesso ao
-     * atualizar, e a partir daí tudo é regulável na aba do Perfil.
-     *
-     * @var array<int,array<int,string>> bit antigo => direitos que o herdam
-     */
-    public const LEGACY_MAP = [
-        READ => [
-            'plugin_shopmap_floorplans',
-            'plugin_shopmap_shapes',
-            'plugin_shopmap_connections',
-            'plugin_shopmap_route',
-            'plugin_shopmap_export_png',
-            'plugin_shopmap_export_pdf',
-            'plugin_shopmap_exportlog',
-        ],
-        UPDATE => [
-            'plugin_shopmap_floorplans',
-            'plugin_shopmap_shapes',
-            'plugin_shopmap_connections',
-            'plugin_shopmap_netport',
-        ],
-        CREATE => [
-            'plugin_shopmap_floorplans',
-            'plugin_shopmap_shapes',
-            'plugin_shopmap_connections',
-        ],
-        DELETE => [
-            'plugin_shopmap_floorplans',
-            'plugin_shopmap_shapes',
-            'plugin_shopmap_connections',
-        ],
     ];
 
     /**
@@ -261,43 +228,23 @@ class Install
         }
 
         // ------------------------------------------------------------------
-        // Direitos próprios do plugin — Bloco 8a (Fase 4)
+        // Direitos do plugin — Bloco 8b (modelo DGO+): direito único.
         //
-        // ATENÇÃO (lição do ProjectPlus): Migration::addRight só INSERE a
-        // linha para os perfis que ainda NÃO a têm — com o valor pedido
-        // para quem atende ao pré-requisito e 0 para os demais. Ou seja,
-        // só a PRIMEIRA chamada para um mesmo nome de direito tem efeito;
-        // uma segunda chamada com outro pré-requisito é código morto. Por
-        // isso há exatamente UMA chamada por direito, e o ajuste fino é
-        // feito na aba "ShopMap" do Perfil.
-        //
-        // addRight nunca rebaixa valor existente: é seguro reexecutar o
-        // install (plugin:install --force) sem desfazer a configuração.
+        // ATENÇÃO (lição 25): Migration::addRight só INSERE a linha para
+        // os perfis que ainda NÃO a têm — com o valor pedido para quem
+        // atende ao pré-requisito e 0 para os demais — e nunca eleva
+        // linha existente. É seguro reexecutar (plugin:install --force)
+        // sem desfazer configuração feita à mão na aba do Perfil.
         // ------------------------------------------------------------------
         $migration->addRight('plugin_shopmap', READ | UPDATE | CREATE | DELETE, ['config' => UPDATE]);
 
-        // Direitos granulares: a linha nasce em 0 para TODOS os perfis.
-        // Decisão do usuário (07/08/2026): NADA pré-definido — nenhum
-        // perfil pronto é criado, tudo é liberado à mão na aba do Perfil.
-        // O único ajuste automático é a preservação do que já existia
-        // (migrateLegacyRight) e a reconciliação do admin
-        // (ensureAdminRights), logo abaixo.
-        foreach (self::RIGHTS as $rightName) {
-            if ($rightName === 'plugin_shopmap') {
-                continue; // já criado acima, com o histórico do Bloco 1
-            }
-            $migration->addRight($rightName, 0, []);
-        }
+        // Atualização Bloco 8a -> 8b: absorve os bits que estiverem nos
+        // 8 direitos granulares aposentados de volta no direito único
+        // (só eleva, nunca rebaixa) e apaga as linhas aposentadas.
+        self::absorbRetiredRights();
 
-        // Preservação: quem já usava o direito único herda o equivalente
-        // granular, bit a bit — ninguém perde acesso na atualização.
-        self::migrateLegacyRight();
-
-        // Reconciliação do administrador: perfis com `config` UPDATE
-        // ficam com a matriz no máximo. Sem isso, um perfil cuja linha
-        // nasceu numa versão anterior nunca seria elevado por addRight —
-        // foi exatamente assim que o Super-Admin do ProjectPlus ficou só
-        // com leitura em homologação.
+        // Reconciliação do administrador (lição 25): perfis com `config`
+        // UPDATE ficam com o direito no máximo da matriz. Só eleva.
         self::ensureAdminRights();
 
         // ------------------------------------------------------------------
@@ -419,52 +366,41 @@ class Install
     }
 
     /**
-     * Os direitos granulares (todos menos o `plugin_shopmap` histórico).
+     * Valor final do direito único após absorver os granulares
+     * aposentados. Função PURA — é o que o harness testa.
      *
-     * @return array<int,string>
-     */
-    public static function granularRights(): array
-    {
-        return array_values(array_filter(
-            self::RIGHTS,
-            static fn(string $n): bool => $n !== 'plugin_shopmap'
-        ));
-    }
-
-    /**
-     * Traduz um valor do direito único antigo nos bits granulares
-     * correspondentes. Função PURA — é o que o harness testa.
+     * O OR de tudo, limitado aos 4 bits da matriz (READ|UPDATE|CREATE|
+     * DELETE): qualquer "Ver" granular vira Ler, qualquer "Interagir"
+     * vira Atualizar, e assim por diante. Só ELEVA — bit já ligado no
+     * direito único permanece.
      *
-     * @return array<string,int> direito => bits herdados
+     * @param int                   $current       valor atual de plugin_shopmap
+     * @param array<int|string,int> $retiredValues valores dos direitos aposentados
      */
-    public static function legacyRightsFor(int $old): array
+    public static function retiredMergeValue(int $current, array $retiredValues): int
     {
-        $out = [];
-        foreach (self::LEGACY_MAP as $bit => $names) {
-            if (((int) $old & (int) $bit) !== (int) $bit) {
-                continue;
-            }
-            foreach ($names as $name) {
-                $out[$name] = ($out[$name] ?? 0) | (int) $bit;
-            }
+        $merged = $current;
+        foreach ($retiredValues as $bits) {
+            $merged |= (int) $bits;
         }
-        return $out;
+        return $merged & (READ | UPDATE | CREATE | DELETE);
     }
 
     /**
-     * Preservação do acesso na atualização Bloco 1 → Bloco 8a.
+     * Atualização Bloco 8a → 8b: para cada perfil, funde os bits dos 8
+     * direitos granulares no direito único `plugin_shopmap` (só eleva —
+     * ninguém perde acesso na simplificação) e depois APAGA as linhas
+     * aposentadas de glpi_profilerights.
      *
-     * Para cada perfil que tinha `plugin_shopmap` diferente de 0, liga os
-     * bits equivalentes nos direitos granulares (LEGACY_MAP). Só ELEVA,
-     * nunca rebaixa.
+     * Idempotente: numa segunda execução as linhas aposentadas já não
+     * existem, então não há nada a absorver nem a apagar.
      *
-     * SALVAGUARDA DE IDEMPOTÊNCIA: se o perfil já tem QUALQUER direito
-     * granular diferente de 0, ele é considerado "já configurado à mão" e
-     * é deixado em paz. Sem isso, um `plugin:install --force` futuro
-     * ressuscitaria direitos que o administrador tivesse desmarcado de
-     * propósito na aba do Perfil.
+     * `ProfileRight::updateProfileRights()` em vez de UPDATE direto
+     * (lição 25): dispara `post_updateItem` → atualiza
+     * `glpi_profiles.last_rights_update` → sessão aberta recarrega os
+     * direitos sem logout.
      */
-    public static function migrateLegacyRight(): void
+    public static function absorbRetiredRights(): void
     {
         /** @var \DBmysql $DB */
         global $DB;
@@ -473,46 +409,28 @@ class Install
             return;
         }
 
-        $granular = self::granularRights();
-
+        // Perfis que têm alguma linha aposentada
+        $retired = [];
         $it = $DB->request([
-            'SELECT' => ['profiles_id', 'rights'],
+            'SELECT' => ['profiles_id', 'name', 'rights'],
             'FROM'   => 'glpi_profilerights',
-            'WHERE'  => ['name' => 'plugin_shopmap'],
+            'WHERE'  => ['name' => self::RETIRED_RIGHTS],
         ]);
-
         foreach ($it as $row) {
-            $profileId = (int) $row['profiles_id'];
-            $old       = (int) $row['rights'];
-            if ($old === 0) {
-                continue;
-            }
+            $retired[(int) $row['profiles_id']][(string) $row['name']] = (int) $row['rights'];
+        }
 
-            $current = \ProfileRight::getProfileRights($profileId, $granular);
-
-            // Já configurado à mão? não mexe.
-            $configured = false;
-            foreach ($granular as $name) {
-                if ((int) ($current[$name] ?? 0) !== 0) {
-                    $configured = true;
-                    break;
-                }
-            }
-            if ($configured) {
-                continue;
-            }
-
-            $update = [];
-            foreach (self::legacyRightsFor($old) as $name => $bits) {
-                $cur = (int) ($current[$name] ?? 0);
-                if (($cur | $bits) !== $cur) {
-                    $update[$name] = $cur | $bits;
-                }
-            }
-            if ($update !== []) {
-                \ProfileRight::updateProfileRights($profileId, $update);
+        foreach ($retired as $profileId => $values) {
+            $current = \ProfileRight::getProfileRights($profileId, ['plugin_shopmap']);
+            $cur     = (int) ($current['plugin_shopmap'] ?? 0);
+            $merged  = self::retiredMergeValue($cur, $values);
+            if ($merged !== $cur) {
+                \ProfileRight::updateProfileRights($profileId, ['plugin_shopmap' => $merged]);
             }
         }
+
+        // Apaga as linhas aposentadas (todos os perfis de uma vez)
+        \ProfileRight::deleteProfileRights(self::RETIRED_RIGHTS);
     }
 
     /**

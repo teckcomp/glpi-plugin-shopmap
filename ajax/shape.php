@@ -56,8 +56,20 @@ if ($action === 'list') {
     sm_reply(['ok' => true, 'shapes' => Shape::forPlan($planId)]);
 }
 
-// Daqui para baixo, tudo é mutação
-Session::checkRight('plugin_shopmap', UPDATE);
+// Daqui para baixo, tudo é mutação. Bloco 8b: o bit exigido segue a
+// natureza da ação (modelo DGO+ — Ler/Atualizar/Criar/Deletar):
+// criar shape = CREATE; excluir = DELETE; o resto (mover, editar,
+// legenda, converter em/de vago) = UPDATE.
+$needed = [
+    'create'   => CREATE,
+    'delete'   => DELETE,
+    'move'     => UPDATE,
+    'update'   => UPDATE,
+    'legend'   => UPDATE,
+    'makevago' => UPDATE,
+    'settype'  => UPDATE,
+];
+Session::checkRight('plugin_shopmap', $needed[$action] ?? UPDATE);
 
 switch ($action) {
     case 'create':

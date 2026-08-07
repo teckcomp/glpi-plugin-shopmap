@@ -260,7 +260,7 @@
         return '<i class="ti ' + iconClass(shape) + '"></i> <span>' + esc(text) + '</span>';
     }
 
-    function popupHtml(shape, canUpdate, links) {
+    function popupHtml(shape, canUpdate, links, canDelete) {
         var meta = TYPE_META[shape.shapetype] || TYPE_META.equipment;
         var isRackPop = (shape.rack_items || []).length > 0;
         var h = '<div class="sm-pop' + (isRackPop ? ' sm-pop-wide' : '') + '" data-shape-id="' + shape.id + '">';
@@ -334,7 +334,7 @@
                  'Os cabos tracejados desta ponta est\u00e3o preservados.</div>';
             h += '<div class="sm-pop-actions">' +
                  '<button type="button" class="sm-pop-btn sm-pop-save">Salvar</button>' +
-                 '<button type="button" class="sm-pop-btn sm-pop-del">Excluir</button>' +
+                 (canDelete ? '<button type="button" class="sm-pop-btn sm-pop-del">Excluir</button>' : '') +
                  '</div>' +
                  '<label class="sm-pop-lbl">Converter para</label>' +
                  '<div class="sm-pop-searchrow">' +
@@ -366,7 +366,7 @@
              (shape.shapetype !== 'passbox'
                 ? '<button type="button" class="sm-pop-btn sm-pop-makevago" title="O equipamento saiu, a fibra fica lan\u00e7ada aguardando o pr\u00f3ximo">Converter em Vago</button>'
                 : '') +
-             '<button type="button" class="sm-pop-btn sm-pop-del">Excluir</button>' +
+             (canDelete ? '<button type="button" class="sm-pop-btn sm-pop-del">Excluir</button>' : '') +
              '</div>';
 
         return h + '</div>';
@@ -583,7 +583,7 @@
         return h;
     }
 
-    function connPopupHtml(conn, names, canUpdate, ends) {
+    function connPopupHtml(conn, names, canUpdate, ends, canDelete) {
         var meta = cableMeta(conn.cable_type);
         var h = '<div class="sm-cpop" data-conn-id="' + conn.id + '">';
         h += '<div class="sm-pop-type"><i class="ti ti-route"></i> ' +
@@ -654,7 +654,7 @@
         h += '<div class="sm-pop-actions">' +
              '<button type="button" class="sm-pop-btn sm-cpop-save">Salvar</button>' +
              '<button type="button" class="sm-pop-btn sm-cpop-editpath" title="Mover, inserir ou remover os v\u00e9rtices do caminho">Editar tra\u00e7ado</button>' +
-             '<button type="button" class="sm-pop-btn sm-pop-del sm-cpop-del">Excluir cabo</button>' +
+             (canDelete ? '<button type="button" class="sm-pop-btn sm-pop-del sm-cpop-del">Excluir cabo</button>' : '') +
              '</div>';
 
         return h + '</div>';
@@ -920,7 +920,9 @@
             if (ev.key === 'Escape' && self.clipMode) { self.exitClipMode(); }
         });
 
-        if (cfg.canUpdate) {
+        // 8b: a toolbar aparece para quem pode editar OU criar; os
+        // controles de criação dentro dela só para quem pode criar
+        if (cfg.canUpdate || cfg.canCreate) {
             this.bindToolbar();
             document.addEventListener('keydown', function (ev) {
                 if (ev.key === 'Escape') {
@@ -1101,7 +1103,7 @@
             var c = self.conns[conn.id];
             L.popup({ minWidth: 240 })
                 .setLatLng(ev.latlng)
-                .setContent(connPopupHtml(c, self.connNames(c), self.cfg.canUpdate, self.connEnds(c)))
+                .setContent(connPopupHtml(c, self.connNames(c), self.cfg.canUpdate, self.connEnds(c), self.cfg.canDelete))
                 .openOn(self.map);
         });
         this.lines[conn.id] = line;
@@ -2063,7 +2065,7 @@
             }
             L.popup({ minWidth: 230 })
                 .setLatLng([s.y, s.x])
-                .setContent(popupHtml(s, this.cfg.canUpdate, links))
+                .setContent(popupHtml(s, this.cfg.canUpdate, links, this.cfg.canDelete))
                 .openOn(this.map);
             return;
         }
@@ -2133,6 +2135,11 @@
         var bar = document.getElementById('shopmap-toolbar');
         if (!bar) { return; }
         bar.classList.remove('d-none');
+        // 8b: sem o bit Criar, os controles de criação somem (fica a dica)
+        if (!this.cfg.canCreate) {
+            var ct = document.getElementById('shopmap-create-tools');
+            if (ct) { ct.classList.add('d-none'); }
+        }
         // 4i: seletor de cor do próximo shape
         bar.querySelectorAll('#shopmap-colorpick .sm-color-swatch').forEach(function (sw) {
             sw.addEventListener('click', function () {
@@ -2183,8 +2190,10 @@
             this.setHint('Arraste um shape para reposicionar \u00b7 clique nele para editar');
         }
 
-        // daqui para baixo é tudo edição
-        if (!this.cfg.canUpdate) { return; }
+        // daqui para baixo é edição OU criação (8b: modos de desenho e
+        // shape novo valem para quem tem só o bit Criar; o servidor é
+        // quem barra de verdade cada ação pelo bit exigido)
+        if (!this.cfg.canUpdate && !this.cfg.canCreate) { return; }
         if (this.mode === 'editpath') { return; } // 4h: inserir é no clique da LINHA
 
         // modo de conexão SEM origem: clique perto de um shape conta

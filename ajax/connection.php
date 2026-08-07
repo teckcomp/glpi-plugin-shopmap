@@ -62,9 +62,23 @@ function smc_find(int $planId, int $id): ?array
     return null;
 }
 
-Session::checkRight('plugin_shopmap', UPDATE);
-
 $action = $_POST['action'] ?? '';
+
+// Bloco 8b: o bit exigido segue a natureza da ação (modelo DGO+):
+// desenhar cabo = CREATE; excluir = DELETE; consultar as pontas
+// (endinfo é leitura pura, alimenta o popup) = READ; editar cabo e
+// registrar/desfazer portas = UPDATE (portas exigem TAMBÉM o direito
+// `networking` UPDATE do core, checado dentro de cada case).
+$needed = [
+    'create'     => CREATE,
+    'update'     => UPDATE,
+    'delete'     => DELETE,
+    'endinfo'    => READ,
+    'portinfo'   => UPDATE,
+    'portlink'   => UPDATE,
+    'portunlink' => UPDATE,
+];
+Session::checkRight('plugin_shopmap', $needed[$action] ?? UPDATE);
 
 switch ($action) {
     case 'create':

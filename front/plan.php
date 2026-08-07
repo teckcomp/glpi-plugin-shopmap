@@ -32,7 +32,12 @@ Html::header(
 
 // Dados para o JS. JSON com flags HEX (lição: '</script>' num nome de
 // planta quebraria a página sem isso).
+// Bloco 8b (modelo DGO+): um flag por bit do direito único. O JS usa
+// canUpdate (mover/editar), canCreate (toolbar de criação) e canDelete
+// (botões Excluir dos popups) — o gate de verdade é o dos endpoints.
 $canUpdate = Session::haveRight('plugin_shopmap', UPDATE);
+$canCreate = Session::haveRight('plugin_shopmap', CREATE);
+$canDelete = Session::haveRight('plugin_shopmap', DELETE);
 
 $planJson = json_encode([
     'id'        => (int) $plan['id'],
@@ -43,6 +48,8 @@ $planJson = json_encode([
     'shapes'      => Shape::forPlan((int) $plan['id']),
     'connections' => Connection::forPlan((int) $plan['id']),
     'canUpdate' => $canUpdate,
+    'canCreate' => $canCreate,
+    'canDelete' => $canDelete,
     'shapeUrl'  => Url::to('ajax/shape.php'),
     'connUrl'   => Url::to('ajax/connection.php'),
     'assetUrl'  => Url::to('ajax/assetsearch.php'),

@@ -31,8 +31,11 @@
         </div>
     </div>
 
-    {# Toolbar de shapes: o JS remove o d-none quando o usuário pode editar #}
+    {# Toolbar de shapes: o JS remove o d-none quando o usuário pode
+       editar OU criar. Os controles de criação ficam agrupados em
+       #shopmap-create-tools para o JS escondê-los sem o bit Criar (8b). #}
     <div id="shopmap-toolbar" class="d-none mb-2">
+        <span id="shopmap-create-tools">
         <span class="text-muted me-2 small">Adicionar (clique no botão e depois na planta):</span>
         <button type="button" class="btn btn-outline-primary btn-sm" data-shapetype="equipment">
             <i class="ti ti-cpu me-1"></i>Equipamento
@@ -68,6 +71,7 @@
         <button type="button" class="btn btn-outline-warning btn-sm" id="shopmap-quick-connect">
             <i class="ti ti-plug-connected me-1"></i>Conectar (2 cliques)
         </button>
+        </span>
         <span class="text-muted ms-2 small" id="shopmap-hint">Arraste um shape para reposicionar · clique nele para editar</span>
     </div>
 

@@ -39,76 +39,35 @@ class Profile extends CommonDBTM
     }
 
     /**
-     * Lista canônica dos direitos do plugin exibidos na matriz.
+     * Matriz de direitos do plugin — Bloco 8b (decisão 08/08/2026):
+     * modelo simplificado "como o DGO+": UMA linha, o direito único
+     * `plugin_shopmap`, com as quatro colunas Ler / Atualizar / Criar /
+     * Deletar. Sem amarração por módulo — a granularidade de 9 direitos
+     * do Bloco 8a foi descartada por engessar demais a operação.
      *
-     * Leitura das colunas:
-     *  - Ver:       enxerga o módulo
-     *  - Interagir: altera o que já existe (mover shape, editar atributos
-     *               ou traçado do cabo, renomear planta, salvar legenda)
-     *  - Criar:     adiciona novo
-     *  - Excluir:   apaga
-     *
-     * `plugin_shopmap` é o direito que já existia desde o Bloco 1 e
-     * permanece como a linha "Painel (plantas)" — reaproveitar em vez de
-     * criar um `_dashboard` novo evita uma migração inútil e mantém o
-     * menu Ativos → ShopMap funcionando sem alteração no setup.php.
+     * Semântica das colunas (vale para plantas, shapes e cabos):
+     *  - Ler:       abrir painel e plantas, ver tudo, buscar (inclusive
+     *               dentro do rack), rota BFS, recorte+PNG, PDF, histórico
+     *  - Atualizar: mover/editar shape, vincular ativo, editar cabo e
+     *               traçado, legenda, registrar em NetworkPort (este
+     *               continua exigindo também `networking` UPDATE do core)
+     *  - Criar:     criar shape, desenhar cabo, subir planta
+     *  - Deletar:   excluir shape, cabo, planta
      *
      * @return array<int,array<string,mixed>>
      */
     public static function getAllRights(): array
     {
-        $crud = [
-            READ   => __('Ver', 'shopmap'),
-            UPDATE => __('Interagir', 'shopmap'),
-            CREATE => __('Criar', 'shopmap'),
-            DELETE => __('Excluir', 'shopmap'),
-        ];
-
         return [
             [
-                'label'  => __('Painel (plantas)', 'shopmap'),
+                'label'  => __('ShopMap', 'shopmap'),
                 'field'  => 'plugin_shopmap',
-                'rights' => [READ => __('Ver', 'shopmap')],
-            ],
-            [
-                'label'  => __('Plantas (arquivo, nome, legenda)', 'shopmap'),
-                'field'  => 'plugin_shopmap_floorplans',
-                'rights' => $crud,
-            ],
-            [
-                'label'  => __('Equipamentos na planta (shapes)', 'shopmap'),
-                'field'  => 'plugin_shopmap_shapes',
-                'rights' => $crud,
-            ],
-            [
-                'label'  => __('Cabos / ligações', 'shopmap'),
-                'field'  => 'plugin_shopmap_connections',
-                'rights' => $crud,
-            ],
-            [
-                'label'  => __('Rota até o rack (BFS)', 'shopmap'),
-                'field'  => 'plugin_shopmap_route',
-                'rights' => [READ => __('Ver', 'shopmap')],
-            ],
-            [
-                'label'  => __('Recorte + exportar PNG', 'shopmap'),
-                'field'  => 'plugin_shopmap_export_png',
-                'rights' => [READ => __('Ver', 'shopmap')],
-            ],
-            [
-                'label'  => __('Exportar PDF', 'shopmap'),
-                'field'  => 'plugin_shopmap_export_pdf',
-                'rights' => [READ => __('Ver', 'shopmap')],
-            ],
-            [
-                'label'  => __('Histórico de exportações', 'shopmap'),
-                'field'  => 'plugin_shopmap_exportlog',
-                'rights' => [READ => __('Ver', 'shopmap')],
-            ],
-            [
-                'label'  => __('Registrar cabo em NetworkPort', 'shopmap'),
-                'field'  => 'plugin_shopmap_netport',
-                'rights' => [UPDATE => __('Interagir', 'shopmap')],
+                'rights' => [
+                    READ   => __('Ler', 'shopmap'),
+                    UPDATE => __('Atualizar', 'shopmap'),
+                    CREATE => __('Criar', 'shopmap'),
+                    DELETE => __('Deletar', 'shopmap'),
+                ],
             ],
         ];
     }
