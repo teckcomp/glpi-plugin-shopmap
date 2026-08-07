@@ -32,6 +32,7 @@ $exports = ExportLog::recent(30);
 TemplateRenderer::getInstance()->display('@shopmap/dashboard.html.twig', [
     'sm' => [
         'version'      => PLUGIN_SHOPMAP_VERSION,
+        'shopmap_css'  => Url::asset('css/shopmap.css'), // Bloco 9 r2
         'plans'        => $plans,
         'plan_count'   => count($plans),
         'can_create'   => Session::haveRight('plugin_shopmap', CREATE),

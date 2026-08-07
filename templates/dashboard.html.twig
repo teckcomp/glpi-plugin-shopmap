@@ -1,5 +1,9 @@
 {# ShopMap — dashboard (Bloco 2a): formulário de nova planta + cards.
    Autocontido; toda variável vem na associativa `sm` (front/index.php). #}
+{# Bloco 9 r2: CSS via Url::asset (?v=filemtime) — o hook ADD_CSS não
+   versiona por mtime e o celular ficava com o CSS antigo em cache. #}
+<link rel="stylesheet" href="{{ sm.shopmap_css }}">
+
 <div class="container-fluid shopmap-dashboard" id="shopmap-dashboard">
 
     <div class="d-flex align-items-center justify-content-between mb-3">

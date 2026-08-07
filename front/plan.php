@@ -68,6 +68,7 @@ TemplateRenderer::getInstance()->display('@shopmap/plan.html.twig', [
         'plan_json'   => $planJson,
         'back_url'    => Url::to('front/index.php'),
         'leaflet_css' => Url::asset('js/leaflet/leaflet.css'),
+        'shopmap_css' => Url::asset('css/shopmap.css'), // Bloco 9 r2
         'leaflet_js'  => Url::asset('js/leaflet/leaflet.js'),
         'plan_js'     => Url::asset('js/shopmap-plan.js'),
     ],

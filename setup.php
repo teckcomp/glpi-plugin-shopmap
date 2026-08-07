@@ -46,9 +46,11 @@ function plugin_init_shopmap(): void
     // precisa conceder o direito pela primeira vez.
     Plugin::registerClass(\GlpiPlugin\Shopmap\Profile::class, ['addtabon' => \Profile::class]);
 
-    // CSS do plugin (por enquanto só o dashboard; Leaflet entra na Fase 1,
-    // Bloco 2, junto com o canvas)
-    $PLUGIN_HOOKS[Hooks::ADD_CSS]['shopmap'] = 'css/shopmap.css';
+    // CSS do plugin: NÃO usa mais o hook ADD_CSS — ele monta a URL sem
+    // cache-buster (?v=versão do plugin, que nunca muda entre blocos) e
+    // o celular ficou preso num shopmap.css antigo (Bloco 9 r2). Cada
+    // template linka o CSS via Url::asset() (?v=filemtime), o MESMO
+    // padrão do JS desde a lição 13.
 }
 
 /**

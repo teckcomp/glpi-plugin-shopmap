@@ -2,6 +2,8 @@
    na associativa `sm` (front/plan.php). O JS expõe mount() com estado
    isolado (padrão do ambiente para conteúdo carregado via AJAX). #}
 <link rel="stylesheet" href="{{ sm.leaflet_css }}">
+{# Bloco 9 r2: shopmap.css com cache-buster, SEMPRE depois do leaflet.css #}
+<link rel="stylesheet" href="{{ sm.shopmap_css }}">
 
 <div class="container-fluid shopmap-plan">
     <div class="d-flex align-items-center justify-content-between mb-2">
@@ -12,7 +14,8 @@
             <i class="ti ti-map-2 me-1"></i>{{ sm.plan_name }}
         </h3>
         <div class="text-muted small">
-            Zoom: roda do mouse / pinça &middot; Tela cheia: botão no mapa
+            {# Bloco 9: dica de desktop some no celular (classe .shopmap-mobile) #}
+            <span class="sm-desktop-hint">Zoom: roda do mouse / pinça &middot; Tela cheia: botão no mapa</span>
             <button type="button" class="btn btn-outline-secondary btn-sm ms-2" id="shopmap-legend-btn">
                 <i class="ti ti-list-details me-1"></i>Legenda
             </button>

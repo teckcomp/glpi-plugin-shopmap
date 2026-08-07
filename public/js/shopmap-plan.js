@@ -791,6 +791,21 @@
 
     // ---------- montagem ----------
 
+    /**
+     * Bloco 9 — modo leitura mobile. Decide se a sessão é "celular":
+     * ponteiro grosso (toque) E menor dimensão da janela <= 500px.
+     * Tablet (iPad >= 744px na menor dimensão) fica FORA de propósito —
+     * lá a tela desktop funciona. Função pura p/ o harness (_mobileRead).
+     * env = { coarse: bool, w: px, h: px }
+     */
+    function mobileRead(env) {
+        if (!env || !env.coarse) { return false; }
+        var w = Number(env.w) || 0;
+        var h = Number(env.h) || 0;
+        if (w <= 0 || h <= 0) { return false; }
+        return Math.min(w, h) <= 500;
+    }
+
     function readData(dataId) {
         var el = document.getElementById(dataId);
         if (!el) { return null; }
@@ -839,6 +854,15 @@
                         document.exitFullscreen();
                     } else if (el.requestFullscreen) {
                         el.requestFullscreen();
+                    } else {
+                        // Bloco 9: Safari do iPhone não tem Fullscreen API
+                        // p/ elementos — pseudo tela cheia por CSS (classe
+                        // fixa ocupando a viewport) + invalidateSize.
+                        var on = el.classList.toggle('shopmap-fs-fallback');
+                        setTimeout(function () {
+                            map.invalidateSize();
+                            if (!on) { map.fitBounds(bounds); }
+                        }, 150);
                     }
                 });
                 return btn;
@@ -853,6 +877,26 @@
                     map.fitBounds(bounds);
                 }
             }, 150);
+        });
+
+        // Bloco 9: Esc também sai do pseudo tela cheia (fallback iPhone)
+        document.addEventListener('keydown', function (ev) {
+            var el = map.getContainer();
+            if (ev.key === 'Escape' && el.classList.contains('shopmap-fs-fallback')) {
+                el.classList.remove('shopmap-fs-fallback');
+                setTimeout(function () {
+                    map.invalidateSize();
+                    map.fitBounds(bounds);
+                }, 150);
+            }
+        });
+
+        // Bloco 9: girar o celular / redimensionar a janela reacomoda o
+        // mapa (orientationchange dispara resize nos navegadores atuais)
+        var smResizeT = null;
+        window.addEventListener('resize', function () {
+            if (smResizeT) { clearTimeout(smResizeT); }
+            smResizeT = setTimeout(function () { map.invalidateSize(); }, 200);
         });
 
         return map;
@@ -905,6 +949,11 @@
             var z = self.map.getZoom();
             var base = (self.map.smFitZoom !== undefined) ? self.map.smFitZoom : z;
             var sc = Math.min(1 + Math.max(0, z - base) * 0.35, 2.6);
+            // Bloco 9 r5: no celular o chip NAO cresce com o zoom — o
+            // enquadramento numa tela pequena fica varios niveis abaixo
+            // do zoom de trabalho e o chip ia direto ao teto de 2.6x
+            // (26px -> ~68px, gigante). 26px fixo e sempre visivel ali.
+            if (self.cfg.mobile) { sc = 1; }
             self.map.getContainer().style.setProperty('--sm-chip-scale', sc.toFixed(2));
         };
         this.map.on('zoomend', applyChipScale);
@@ -987,6 +1036,11 @@
             options: { position: 'bottomright' },
             onAdd: function () {
                 self.legendDiv = L.DomUtil.create('div', 'sm-legend-box');
+                // Bloco 9 r4: no celular a legenda ocupa muita tela —
+                // nasce recolhida num botao; um toque abre, outro fecha
+                if (self.cfg.mobile) {
+                    self.legendDiv.classList.add('sm-legend-mobile', 'sm-legend-collapsed');
+                }
                 L.DomEvent.disableClickPropagation(self.legendDiv);
                 return self.legendDiv;
             }
@@ -1008,8 +1062,25 @@
             return '<div class="sm-legend-item"><span class="sm-legend-dot" style="background:' +
                  e.color + '"></span>' + esc(e.text) + '</div>';
         }).join('');
+        // Bloco 9 r4: no celular os itens vao dentro de um bloco que o
+        // botao de toggle mostra/esconde (CSS via .sm-legend-collapsed)
+        if (this.cfg.mobile && h !== '') {
+            h = '<a href="#" class="sm-legend-toggle" title="Legenda">' +
+                '<i class="ti ti-list-details"></i></a>' +
+                '<div class="sm-legend-items">' + h + '</div>';
+        }
         this.legendDiv.innerHTML = h;
         this.legendDiv.style.display = h === '' ? 'none' : '';
+        if (this.cfg.mobile) {
+            var div = this.legendDiv;
+            var tog = div.querySelector('.sm-legend-toggle');
+            if (tog) {
+                tog.addEventListener('click', function (ev) {
+                    ev.preventDefault();
+                    div.classList.toggle('sm-legend-collapsed');
+                });
+            }
+        }
     };
 
     App.prototype.post = function (params, done) {
@@ -2646,11 +2717,38 @@
         _legendEntries: legendEntries,
         _connXYPoints: connXYPoints,
         _exportFilename: exportFilename,
+        // Bloco 9 — modo leitura mobile
+        _mobileRead: mobileRead,
 
         mount: function (rootId, dataId) {
             var root = document.getElementById(rootId);
             var cfg = readData(dataId);
             if (!root || !cfg || !cfg.fileUrl) { return null; }
+
+            // Bloco 9 — modo leitura mobile: no celular o plugin é SÓ
+            // visualização (decisão de produto). Zera os bits no cliente
+            // (o gate de verdade continua nos endpoints) e marca as
+            // classes que ativam o CSS mobile. Admin no celular também
+            // navega em leitura — para editar, usar o desktop.
+            var coarse = !!(window.matchMedia
+                && window.matchMedia('(pointer: coarse)').matches);
+            var mob = mobileRead({
+                coarse: coarse,
+                w: window.innerWidth,
+                h: window.innerHeight
+            });
+            if (mob) {
+                cfg = Object.assign({}, cfg, {
+                    canUpdate: false,
+                    canCreate: false,
+                    canDelete: false,
+                    mobile: true // r4: legenda recolhivel no celular
+                });
+                var wrap = (root.closest && root.closest('.shopmap-plan'))
+                    || root.parentElement || root;
+                wrap.classList.add('shopmap-mobile');
+                root.classList.add('shopmap-mobile-canvas');
+            }
 
             var w = Number(cfg.width) || 0;
             var h = Number(cfg.height) || 0;

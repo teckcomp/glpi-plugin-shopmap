@@ -245,3 +245,87 @@
     font-size: 12px; white-space: nowrap;
 }
 .sm-clip-info { color: #555; }
+
+/* ===== Bloco 9 — modo leitura mobile =====
+   A classe .shopmap-mobile é adicionada pelo JS no mount() quando o
+   aparelho tem ponteiro grosso (toque) E a menor dimensão da janela é
+   <= 500px (celular; tablet fica de fora). No celular o plugin é SÓ
+   leitura por decisão de produto — o JS zera canUpdate/Create/Delete. */
+
+/* cinto e suspensório: mesmo que algum fluxo tente exibir a toolbar */
+.shopmap-mobile #shopmap-toolbar { display: none !important; }
+.shopmap-mobile .sm-desktop-hint { display: none; }
+.shopmap-mobile h3 { font-size: 1.05rem; }
+
+/* canvas mais alto (o cabeçalho do GLPI já come muito da tela);
+   100dvh evita o pulo da barra de endereço no Chrome/Safari mobile */
+.shopmap-mobile .shopmap-canvas {
+    height: calc(100vh - 170px);
+    height: calc(100dvh - 170px);
+    min-height: 220px;
+}
+
+/* alvos de toque >= 40px em todos os controles do mapa */
+.shopmap-mobile-canvas .leaflet-bar a,
+.shopmap-mobile-canvas.leaflet-touch .leaflet-bar a,
+.shopmap-mobile-canvas .shopmap-fs-btn,
+.shopmap-mobile-canvas .shopmap-cables-btn,
+.shopmap-mobile-canvas .shopmap-clip-btn {
+    width: 40px; height: 40px; line-height: 40px; font-size: 18px;
+}
+.shopmap-mobile-canvas .shopmap-filter-ctl a { font-size: 17px; }
+
+/* busca: acompanha os botões de zoom maiores e nunca estoura a tela;
+   fonte 16px é obrigatória — abaixo disso o iOS dá zoom automático
+   no foco do input e desloca a página inteira */
+.shopmap-mobile-canvas .shopmap-search-ctl {
+    left: 62px;
+    width: min(240px, calc(100vw - 130px));
+}
+.shopmap-mobile-canvas .shopmap-search-input { font-size: 16px; padding: 6px 8px; }
+.shopmap-mobile-canvas .shopmap-search-results li { font-size: 14px; padding: 6px 5px; }
+
+/* área de toque dos chips um pouco maior (dedo, não mouse) */
+.shopmap-mobile-canvas .sm-shape { padding: 12px; margin: -12px; }
+
+/* popups nunca passam da largura da tela (retrato) */
+.shopmap-mobile-canvas .leaflet-popup-content { max-width: calc(100vw - 70px); }
+.shopmap-mobile-canvas .sm-pop-wide { min-width: 0; }
+.shopmap-mobile-canvas .sm-pop,
+.shopmap-mobile-canvas .sm-cpop,
+.shopmap-mobile-canvas .sm-rpop { min-width: 0; }
+
+/* Pseudo tela cheia (Bloco 9): o Safari do iPhone NÃO tem Fullscreen
+   API para elementos — o mesmo botão do mapa cai neste modo por CSS */
+.shopmap-fs-fallback {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 3000;
+    width: 100vw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    border-radius: 0 !important;
+    background: #f4f4f4;
+}
+
+/* retrato estreito: legenda e painel de recorte ocupam a largura útil */
+@media (max-width: 500px) {
+    #shopmap-legend-panel { right: 8px; left: 8px; width: auto; }
+    .shopmap-clip-panel { white-space: normal; max-width: calc(100vw - 30px); }
+}
+
+/* Bloco 9 r4 — legenda RECOLHIVEL no celular (pedido do usuario: so a
+   legenda estava grande). Nasce recolhida num botao; toque abre/fecha. */
+.sm-legend-mobile { font-size: 11px; padding: 0; max-width: 220px; }
+.sm-legend-mobile .sm-legend-items { padding: 6px 10px 8px; }
+.sm-legend-mobile .sm-legend-dot { width: 11px; height: 11px; }
+.sm-legend-mobile .sm-legend-item { margin: 1px 0; }
+.sm-legend-toggle {
+    display: block; width: 40px; height: 40px; line-height: 40px;
+    text-align: center; font-size: 18px; color: #333; text-decoration: none;
+}
+.sm-legend-toggle:hover { color: #000; }
+.sm-legend-collapsed .sm-legend-items { display: none; }
+.sm-legend-mobile:not(.sm-legend-collapsed) .sm-legend-toggle {
+    border-bottom: 1px solid #e3e3e3;
+}
