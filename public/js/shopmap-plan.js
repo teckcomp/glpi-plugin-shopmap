@@ -191,11 +191,25 @@
         return isDgo(shape) ? 'passbox' : shape.shapetype;
     }
 
-    /** Um shape passa no filtro de tipo ativo? 'all' sempre passa;
-     *  'none' (r5) oculta TODOS os shapes de uma vez. Puro p/ teste. */
+    /**
+     * Um shape passa no filtro de tipo ativo? Puro p/ teste. `filter` aceita:
+     * - falsy / 'all'         → todos passam;
+     * - 'none' (r5)           → oculta TODOS de uma vez;
+     * - string de um tipo     → só esse tipo (compat. com chamadas antigas);
+     * - Set/Array de tipos (r6: multi-seleção) → passa quem estiver no
+     *   conjunto; conjunto VAZIO equivale a 'all' (nenhum filtro marcado
+     *   = mostra tudo, mesmo efeito de clicar em "Todos").
+     */
     function shapeMatchesFilter(shape, filter) {
         if (filter === 'none') { return false; }
-        return !filter || filter === 'all' || filterCategory(shape) === filter;
+        if (!filter || filter === 'all') { return true; }
+        if (filter instanceof Set) {
+            return filter.size === 0 || filter.has(filterCategory(shape));
+        }
+        if (Array.isArray(filter)) {
+            return filter.length === 0 || filter.indexOf(filterCategory(shape)) !== -1;
+        }
+        return filterCategory(shape) === filter;
     }
 
     /**
@@ -863,7 +877,10 @@
         this.cableFocus = 0;      // shape em foco (0 = nenhum)
         this.cablesBtn = null;    // botão do toggle (controle Leaflet)
         this.routeSet = null;     // Bloco 5: {connId: true, ...} da rota ativa (null = nenhuma)
-        this.typeFilter = 'all';  // Bloco 6: filtro de visualização por tipo ('all' = todos)
+        // Bloco 6 (r6: multi-seleção): Set() vazio = 'Todos' (nenhum filtro
+        // marcado, mostra tudo); string 'none' = "Ocultar todos" (exclusivo);
+        // Set com 1+ chaves de FILTER_TYPES = mostra só quem estiver marcado.
+        this.typeFilter = new Set();
         this.planOverlay = this.map.smPlanOverlay || null; // 7a: <img> da planta
         this.clipMode = false;    // 7a: selecionando área p/ exportar
         this.clipStart = null;    // 7a: {x,y} inicial do arrasto (px da planta)
@@ -1432,10 +1449,19 @@
     };
 
     /**
-     * Painel vertical de filtro (Todos + cada FILTER_TYPES), controle
-     * Leaflet topleft, seleção exclusiva. Só afeta os ÍCONES dos shapes
-     * — a visibilidade dos CABOS continua pelo sistema do 4d/5
+     * Painel vertical de filtro (Todos + cada FILTER_TYPES + Ocultar
+     * todos), controle Leaflet topleft. Só afeta os ÍCONES dos shapes —
+     * a visibilidade dos CABOS continua pelo sistema do 4d/5
      * (mode/routeSet/focus/base), sem misturar as duas lógicas.
+     *
+     * r6 (multi-seleção): "Todos" e "Ocultar todos" continuam exclusivos
+     * entre si (fazem sentido só sozinhos — mostrar tudo ou esconder
+     * tudo). Cada tipo individual (equipment/rack/passbox/access_point/
+     * onu_router/vago) agora é um TOGGLE independente: clique marca,
+     * clique de novo desmarca, e vários ficam marcados ao mesmo tempo
+     * (union). Desmarcar um não mexe nos outros já marcados. Se o
+     * último tipo marcado for desmarcado, o conjunto fica vazio e isso
+     * equivale a "Todos" (mostra tudo de novo).
      */
     App.prototype.addFilterControl = function () {
         var self = this;
@@ -1445,17 +1471,43 @@
                 var box = L.DomUtil.create('div', 'shopmap-filter-ctl leaflet-bar');
                 L.DomEvent.disableClickPropagation(box);
 
+                /** Estado atual marca este botão como ativo? */
+                var isActive = function (key) {
+                    if (key === 'none') { return self.typeFilter === 'none'; }
+                    if (key === 'all') {
+                        return self.typeFilter instanceof Set && self.typeFilter.size === 0;
+                    }
+                    return self.typeFilter instanceof Set && self.typeFilter.has(key);
+                };
+
+                var refreshActive = function () {
+                    box.querySelectorAll('.sm-filter-opt').forEach(function (b) {
+                        b.classList.toggle('active', isActive(b.dataset.filterKey));
+                    });
+                };
+
                 var addOpt = function (key, label, icon) {
-                    var a = L.DomUtil.create('a', 'sm-filter-opt' + (key === 'all' ? ' active' : ''), box);
+                    var a = L.DomUtil.create('a', 'sm-filter-opt', box);
                     a.href = '#';
                     a.title = label;
+                    a.dataset.filterKey = key;
                     a.innerHTML = '<i class="ti ' + icon + '"></i>';
                     L.DomEvent.on(a, 'click', function (ev) {
                         L.DomEvent.stop(ev);
-                        self.typeFilter = key;
-                        box.querySelectorAll('.sm-filter-opt').forEach(function (b) {
-                            b.classList.toggle('active', b === a);
-                        });
+                        if (key === 'all') {
+                            self.typeFilter = new Set(); // reset: mostra tudo
+                        } else if (key === 'none') {
+                            self.typeFilter = 'none';    // exclusivo: esconde tudo
+                        } else {
+                            // toggle individual — parte sempre de um Set
+                            if (!(self.typeFilter instanceof Set)) { self.typeFilter = new Set(); }
+                            if (self.typeFilter.has(key)) {
+                                self.typeFilter.delete(key);
+                            } else {
+                                self.typeFilter.add(key);
+                            }
+                        }
+                        refreshActive();
                         self.applyTypeFilter();
                     });
                 };
@@ -1468,6 +1520,7 @@
                 // r5: esconder todos os shapes de uma vez (planta limpa)
                 addOpt('none', 'Ocultar todos', 'ti-eye-off');
 
+                refreshActive(); // estado inicial: 'Todos' marcado (Set vazio)
                 return box;
             }
         });
