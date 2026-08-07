@@ -39,6 +39,13 @@ function plugin_init_shopmap(): void
         ];
     }
 
+    // Aba "ShopMap" no formulário de Perfil (Administração → Perfis):
+    // matriz de direitos por módulo, Bloco 8a. A própria classe restringe
+    // quem vê ($rightname = 'profile'), então o registro é incondicional —
+    // amarrá-lo a `plugin_shopmap` esconderia a aba justamente de quem
+    // precisa conceder o direito pela primeira vez.
+    Plugin::registerClass(\GlpiPlugin\Shopmap\Profile::class, ['addtabon' => \Profile::class]);
+
     // CSS do plugin (por enquanto só o dashboard; Leaflet entra na Fase 1,
     // Bloco 2, junto com o canvas)
     $PLUGIN_HOOKS[Hooks::ADD_CSS]['shopmap'] = 'css/shopmap.css';
